@@ -5,6 +5,7 @@ import config from "./config";
 import { globalErrorHandler } from "./middlewares/globalErrorHandler";
 import { notFound } from "./middlewares/notFound";
 import { authRoutes } from "./modules/auth/auth.routes";
+import { reportRoutes } from "./modules/report/report.routes";
 
 const app: Application = express();
 
@@ -20,6 +21,7 @@ app.use(express.urlencoded({ extended: true }));
 app.use(cookieParser());
 
 app.use("/api/auth", authRoutes);
+app.use("/api/reports", reportRoutes);
 app.get("/", (req: Request, res: Response) => {
   res.send("Hello, World!");
 });
