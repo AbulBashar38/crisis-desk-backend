@@ -2,7 +2,42 @@ import bcrypt from "bcryptjs";
 import config from "../../config";
 import { prisma } from "../../lib/prisma";
 import { jwtUtils } from "../../utils/jwt";
-import { ILoginUser } from "./auth.interface";
+import { ILoginUser, IRegisterUser } from "./auth.interface";
+
+const registerUser = async (payload: IRegisterUser) => {
+  const { name, email, password } = payload;
+
+  const existingUser = await prisma.user.findUnique({
+    where: { email },
+  });
+
+  if (existingUser) {
+    throw new Error("User already exists with this email");
+  }
+
+  const hashedPassword = await bcrypt.hash(
+    password,
+    Number(config.bcrypt_salt_rounds) || 12,
+  );
+
+  const user = await prisma.user.create({
+    data: {
+      name,
+      email,
+      password: hashedPassword,
+      role: "admin",
+    },
+    select: {
+      id: true,
+      name: true,
+      email: true,
+      role: true,
+      createdAt: true,
+    },
+  });
+
+  return user;
+};
 
 const loginUser = async (payload: ILoginUser) => {
   const { email, password } = payload;
@@ -42,5 +77,6 @@ const loginUser = async (payload: ILoginUser) => {
 };
 
 export const authService = {
+  registerUser,
   loginUser,
 };

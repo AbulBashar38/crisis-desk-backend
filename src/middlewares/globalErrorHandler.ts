@@ -4,10 +4,10 @@ import { ZodError } from "zod";
 import { Prisma } from "../../generated/prisma/client";
 
 export const globalErrorHandler = (err: any, _req: Request, res: Response, _next: NextFunction) => {
-  console.log("Error:", err);
+  console.log("Error:", err?.message || "Unknown error");
 
   let statusCode: number = httpStatus.INTERNAL_SERVER_ERROR;
-  let errorMessage = err.message || "Internal Server Error";
+  let errorMessage: string = err?.message || "Internal Server Error";
 
   if (err instanceof ZodError) {
     statusCode = httpStatus.BAD_REQUEST;
