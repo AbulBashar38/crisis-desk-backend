@@ -14,5 +14,6 @@ export const registerValidationSchema = z.object({
     password: z
       .string({ required_error: "Password is required" })
       .min(6, "Password must be at least 6 characters"),
+    role: z.enum(["user", "admin"], { required_error: "Role is required" }),
   }),
 });

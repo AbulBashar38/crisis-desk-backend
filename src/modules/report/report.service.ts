@@ -1,7 +1,11 @@
-import { generateEmbedding, cosineSimilarity } from "../../lib/embedding";
+import { cosineSimilarity, generateEmbedding } from "../../lib/embedding";
 import { classifyReport } from "../../lib/gemini";
 import { prisma } from "../../lib/prisma";
-import { ICreateReport } from "./report.interface";
+import {
+  ICreateReport,
+  IReportFilters,
+  IUpdateReportStatus,
+} from "./report.interface";
 
 const DUPLICATE_THRESHOLD = 0.9;
 
@@ -75,6 +79,152 @@ const createReport = async (payload: ICreateReport) => {
   return reportResponse;
 };
 
+const getAllReports = async (filters: IReportFilters) => {
+  const {
+    category,
+    urgency,
+    status,
+    search,
+    startDate,
+    endDate,
+    page = 1,
+    limit = 10,
+  } = filters;
+
+  const skip = (page - 1) * limit;
+
+  const where: any = {};
+
+  if (category) where.category = category;
+  if (urgency) where.urgency = urgency;
+  if (status) where.status = status;
+
+  if (search) {
+    where.OR = [
+      { description: { contains: search, mode: "insensitive" } },
+      { location: { contains: search, mode: "insensitive" } },
+    ];
+  }
+
+  if (startDate || endDate) {
+    where.createdAt = {};
+    if (startDate) where.createdAt.gte = new Date(startDate);
+    if (endDate) where.createdAt.lte = new Date(endDate);
+  }
+
+  const [reports, total] = await Promise.all([
+    prisma.report.findMany({
+      where,
+      skip,
+      take: limit,
+      orderBy: { createdAt: "desc" },
+      omit: { embedding: true },
+    }),
+    prisma.report.count({ where }),
+  ]);
+
+  return {
+    reports,
+    meta: { page, limit, total },
+  };
+};
+
+const getReportById = async (id: string) => {
+  const report = await prisma.report.findUnique({
+    where: { id },
+    omit: { embedding: true },
+  });
+
+  if (!report) {
+    throw new Error("Report not found.");
+  }
+
+  return report;
+};
+
+const updateReportStatus = async (id: string, payload: IUpdateReportStatus) => {
+  const existingReport = await prisma.report.findUnique({
+    where: { id },
+    select: { id: true },
+  });
+
+  if (!existingReport) {
+    throw new Error("Report not found.");
+  }
+
+  const updatedReport = await prisma.report.update({
+    where: { id },
+    data: { status: payload.status },
+  });
+
+  const { embedding: _embedding, ...reportResponse } = updatedReport;
+  return reportResponse;
+};
+
+const deleteReport = async (id: string) => {
+  const existingReport = await prisma.report.findUnique({
+    where: { id },
+    select: { id: true },
+  });
+
+  if (!existingReport) {
+    throw new Error("Report not found.");
+  }
+
+  const deletedReport = await prisma.report.delete({
+    where: { id },
+  });
+
+  const { embedding: _embedding, ...reportResponse } = deletedReport;
+  return reportResponse;
+};
+
+const getStatsSummary = async () => {
+  const [
+    totalReports,
+    pendingReports,
+    criticalReports,
+    resolvedReports,
+    categoryBreakdownRaw,
+    urgencyBreakdownRaw,
+  ] = await Promise.all([
+    prisma.report.count(),
+    prisma.report.count({ where: { status: "pending" } }),
+    prisma.report.count({ where: { urgency: "critical" } }),
+    prisma.report.count({ where: { status: "resolved" } }),
+    prisma.report.groupBy({ by: ["category"], _count: { category: true } }),
+    prisma.report.groupBy({ by: ["urgency"], _count: { urgency: true } }),
+  ]);
+
+  const categoryBreakdown: Record<string, number> = {};
+  for (const item of categoryBreakdownRaw) {
+    if (item.category) {
+      categoryBreakdown[item.category] = item._count.category;
+    }
+  }
+
+  const urgencyBreakdown: Record<string, number> = {};
+  for (const item of urgencyBreakdownRaw) {
+    if (item.urgency) {
+      urgencyBreakdown[item.urgency] = item._count.urgency;
+    }
+  }
+
+  return {
+    totalReports,
+    pendingReports,
+    criticalReports,
+    resolvedReports,
+    categoryBreakdown,
+    urgencyBreakdown,
+  };
+};
+
 export const reportService = {
   createReport,
+  getAllReports,
+  getReportById,
+  updateReportStatus,
+  deleteReport,
+  getStatsSummary,
 };

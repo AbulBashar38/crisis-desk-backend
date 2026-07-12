@@ -5,7 +5,7 @@ import { jwtUtils } from "../../utils/jwt";
 import { ILoginUser, IRegisterUser } from "./auth.interface";
 
 const registerUser = async (payload: IRegisterUser) => {
-  const { name, email, password } = payload;
+  const { name, email, password, role } = payload;
 
   const existingUser = await prisma.user.findUnique({
     where: { email },
@@ -25,7 +25,7 @@ const registerUser = async (payload: IRegisterUser) => {
       name,
       email,
       password: hashedPassword,
-      role: "admin",
+      role,
     },
     select: {
       id: true,
