@@ -1,5 +1,4 @@
 import bcrypt from "bcryptjs";
-import { SignOptions } from "jsonwebtoken";
 import config from "../../config";
 import { prisma } from "../../lib/prisma";
 import { jwtUtils } from "../../utils/jwt";
@@ -8,18 +7,22 @@ import { ILoginUser } from "./auth.interface";
 const loginUser = async (payload: ILoginUser) => {
   const { email, password } = payload;
 
-  const user = await prisma.user.findUniqueOrThrow({
+  const user = await prisma.user.findUnique({
     where: { email },
   });
 
-  if (user.status === "SUSPENDED") {
-    throw new Error("Your account has been suspended. Please contact support.");
+  if (!user) {
+    throw new Error("Invalid email or password");
+  }
+
+  if (user.role !== "admin") {
+    throw new Error("Access denied. Only admins can log in.");
   }
 
   const isPasswordMatched = await bcrypt.compare(password, user.password);
 
   if (!isPasswordMatched) {
-    throw new Error("Password is incorrect");
+    throw new Error("Invalid email or password");
   }
 
   const jwtPayload = {
@@ -32,20 +35,12 @@ const loginUser = async (payload: ILoginUser) => {
   const accessToken = jwtUtils.createToken(
     jwtPayload,
     config.jwt_access_secret,
-    config.jwt_access_expires_in as SignOptions,
+    config.jwt_access_expires_in,
   );
 
-  const refreshToken = jwtUtils.createToken(
-    jwtPayload,
-    config.jwt_refresh_secret,
-    config.jwt_refresh_expires_in as SignOptions,
-  );
-
-  return {
-    accessToken,
-    refreshToken,
-  };
+  return { accessToken };
 };
+
 export const authService = {
   loginUser,
 };
