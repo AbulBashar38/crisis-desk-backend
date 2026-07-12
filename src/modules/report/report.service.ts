@@ -1,22 +1,35 @@
-import { prisma } from "../../lib/prisma";
+import { classifyReport } from "../../lib/gemini";
 import { ICreateReport } from "./report.interface";
 
 const createReport = async (payload: ICreateReport) => {
   const { name, contact, location, description, language } = payload;
+  const lang = language || "unknown";
 
-  // TODO: Add AI classification & duplicate detection logic here
+  // AI Classification
+  const aiResult = await classifyReport(description, location, lang);
 
-  const report = await prisma.report.create({
-    data: {
-      name,
-      contact,
-      location,
-      description,
-      language: language || "unknown",
-    },
-  });
+  // Generate embedding for duplicate detection
+  // const embedding = await generateEmbedding(description);
 
-  return report;
+  // TODO: Duplicate detection logic here
+
+  // const report = await prisma.report.create({
+  //   data: {
+  //     name,
+  //     contact,
+  //     location,
+  //     description,
+  //     language: lang,
+  //     category: aiResult.category as any,
+  //     urgency: aiResult.urgency as any,
+  //     summary: aiResult.summary,
+  //     suggestedAction: aiResult.suggestedAction,
+  //     confidence: aiResult.confidence,
+  //     embedding,
+  //   },
+  // });
+
+  return aiResult;
 };
 
 export const reportService = {
