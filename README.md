@@ -420,7 +420,7 @@ All error responses follow a consistent structure:
 
 ```env
 DATABASE_URL=postgresql://user:pass@host:5432/crisisdesk
-PORT=5000
+PORT=8080
 APP_URL=http://localhost:3000
 BCRYPT_SALT_ROUNDS=12
 JWT_ACCESS_SECRET=your_jwt_secret
@@ -449,6 +449,28 @@ All successful responses follow this structure:
 ```
 
 The `meta` field is included only for paginated list endpoints.
+
+---
+
+## API Documentation
+
+Interactive Swagger UI is available at:
+
+```
+http://localhost:8080/api/docs
+```
+
+It documents every public and admin endpoint, request schemas, response codes, and the bearer auth scheme used by admin routes.
+
+---
+
+## Docker
+
+```bash
+docker compose up --build
+```
+
+The `Dockerfile` is a multi-stage build that compiles TypeScript, generates the Prisma client, and copies only the runtime artefacts into a slim image. `docker-compose.yml` reads the same `.env` file for `DATABASE_URL`, `JWT_ACCESS_SECRET`, and `GEMINI_API_KEY`.
 
 ---
 
@@ -536,11 +558,11 @@ npm run dev
 
 - [x] Bangla & English language support (via Gemini multilingual capabilities)
 - [x] JWT Authentication for admin APIs
-- [ ] Request rate limiting
+- [x] Request rate limiting (POST /api/reports and POST /api/auth/login)
 - [x] Schema validation with Zod
-- [ ] Swagger/OpenAPI documentation
-- [ ] Docker support
-- [x] Unit testing (Vitest)
+- [x] Swagger/OpenAPI documentation at `/api/docs`
+- [x] Docker support (Dockerfile + docker-compose.yml)
+- [ ] Unit & Integration testing
 - [x] Advanced duplicate detection using bge-m3 embeddings and cosine similarity
 - [x] Clean modular architecture
 - [x] Live deployment

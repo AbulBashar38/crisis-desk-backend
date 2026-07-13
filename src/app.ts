@@ -1,12 +1,14 @@
 import cookieParser from "cookie-parser";
 import cors from "cors";
 import express, { Application, Request, Response } from "express";
-import rateLimit from "express-rate-limit";
+import swaggerUi from "swagger-ui-express";
 import config from "./config";
+import { swaggerSpec } from "./lib/swagger";
 import { globalErrorHandler } from "./middlewares/globalErrorHandler";
 import { notFound } from "./middlewares/notFound";
 import { authRoutes } from "./modules/auth/auth.routes";
 import { reportRoutes } from "./modules/report/report.routes";
+import rateLimit from "express-rate-limit";
 
 const app: Application = express();
 
@@ -32,6 +34,7 @@ app.use(cookieParser());
 
 app.use("/api/auth", authRoutes);
 app.use("/api/reports", reportRoutes);
+app.use("/api/docs", swaggerUi.serve, swaggerUi.setup(swaggerSpec));
 
 app.get("/", (_req: Request, res: Response) => {
   res.send("Hello, World!");
