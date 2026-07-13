@@ -11,14 +11,6 @@ const options: swaggerJSDoc.Options = {
         "Intelligent backend API for emergency & service request triage.",
     },
     servers: [
-      {
-        url: "https://crisis-desk-backend.onrender.com",
-        description: "Production (Render)",
-      },
-      {
-        url: `http://localhost:${config.port}`,
-        description: "Local development",
-      },
       ...(process.env.PUBLIC_URL
         ? [
             {
@@ -27,6 +19,10 @@ const options: swaggerJSDoc.Options = {
             },
           ]
         : []),
+      {
+        url: `http://localhost:${config.port}`,
+        description: "Local development",
+      },
     ],
     components: {
       // OpenAPI component types are validated at runtime by Swagger UI;
