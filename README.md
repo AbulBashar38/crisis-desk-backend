@@ -25,23 +25,17 @@ The objective is to build an AI-powered backend system capable of transforming t
 
 | Layer            | Technology                                      |
 | ---------------- | ----------------------------------------------- |
-| Runtime          | Node.js 22                                      |
+| Runtime          | Node.js                                         |
 | Framework        | Express.js 5                                    |
 | Language         | TypeScript                                      |
-| ORM              | Prisma 7 (multi-file schema)                    |
-| Database         | PostgreSQL (Neon DB)                            |
-| Driver           | `@prisma/adapter-pg` + `pg`                     |
+| ORM              | Prisma (multi-file schema)                      |
+| Database         | PostgreSQL (Neon DB)                             |
 | AI               | Google Gemini API (classification & summarization) |
-| Embeddings       | bge-m3 via `@xenova/transformers`               |
+| Embeddings       | bge-m3 model (multilingual duplicate detection) |
 | Similarity       | Cosine Similarity                               |
 | Validation       | Zod                                             |
-| Auth             | JWT (jsonwebtoken) + bcryptjs; cookie or Bearer |
-| CORS / Cookies   | `cors`, `cookie-parser`                         |
-| Rate Limiting    | `express-rate-limit` (global + per-route)       |
-| Env / DX         | `dotenv`, `tsx`                                 |
-| Docs             | `swagger-jsdoc` + `swagger-ui-express`          |
-| Testing          | Vitest + Supertest                              |
-| Container        | Docker (multi-stage) + docker-compose           |
+| Authentication   | JWT (access token via cookie or Bearer header)  |
+| Documentation    | Swagger / OpenAPI                               |
 
 ---
 
@@ -151,7 +145,8 @@ Citizens submit emergency reports. No authentication required for submission.
     "language": "bn",
     "category": "fire",
     "urgency": "critical",
-    "summary": "A fire has been reported near a shop with possible trapped people.",
+    "summary": "একটি দোকানের কাছে আগুন লেগেছে এবং মানুষ আটকা পড়েছে।",
+    "canonicalSummary": "Fire reported near a shop with trapped people in Bondor Bazar, Sylhet.",
     "suggestedAction": "Immediately notify fire service and emergency responders.",
     "confidence": 0.91,
     "possibleDuplicate": false,
@@ -171,13 +166,30 @@ After receiving a report, the system calls Gemini AI to analyze the incident and
 
 **AI Output Fields:**
 
-| Field           | Type   | Description                        |
-| --------------- | ------ | ---------------------------------- |
-| category        | enum   | Issue type classification          |
-| urgency         | enum   | Priority level                     |
-| summary         | string | Short AI-generated summary         |
-| suggestedAction | string | Recommended action for responders  |
-| confidence      | float  | Confidence score (0–1)             |
+| Field              | Type   | Description                                          |
+| ------------------ | ------ | ---------------------------------------------------- |
+| category           | enum   | Issue type classification                            |
+| urgency            | enum   | Priority level                                       |
+| summary            | string | Short summary in the report's language (bn/en/auto)  |
+| canonicalSummary   | string | Short summary always in English (used for embedding) |
+| normalizedLocation | string | Location standardized to clean English format        |
+| suggestedAction    | string | Recommended action for responders (English)          |
+| confidence         | float  | Confidence score (0–1)                               |
+
+**Language-aware summary behavior:**
+
+- `language: "bn"` → `summary` in Bangla
+- `language: "en"` → `summary` in English
+- `language: "unknown"` → `summary` in the detected language of the description
+- `canonicalSummary` is always English regardless of input language
+
+**Location normalization:**
+
+Gemini normalizes the raw location into a clean English format for consistent embedding:
+
+- "সিলেট বন্দর বাজার" → "Bondor Bazar, Sylhet"
+- "sylhet bondor bazar area" → "Bondor Bazar, Sylhet"
+- Proper capitalization, removes informal words, translates if needed
 
 **Allowed Categories:** `medical`, `fire`, `accident`, `crime`, `flood`, `utility`, `public_service`, `infrastructure`, `other`
 
@@ -189,13 +201,15 @@ After receiving a report, the system calls Gemini AI to analyze the incident and
 {
   "category": "fire",
   "urgency": "critical",
-  "summary": "A fire has been reported near a shop with possible trapped people.",
+  "summary": "একটি দোকানের কাছে আগুন লেগেছে এবং মানুষ আটকা পড়েছে।",
+  "canonicalSummary": "Fire reported near a shop with trapped people in Bondor Bazar, Sylhet.",
+  "normalizedLocation": "Bondor Bazar, Sylhet",
   "suggestedAction": "Immediately notify fire service and emergency responders.",
   "confidence": 0.91
 }
 ```
 
-The AI must handle both Bangla and English input descriptions.
+The AI handles both Bangla and English input descriptions.
 
 ---
 
@@ -203,14 +217,31 @@ The AI must handle both Bangla and English input descriptions.
 
 Detects whether a newly submitted report may describe an already existing incident.
 
-**Approach:** Hybrid strategy using bge-m3 embeddings + cosine similarity
+**Approach:** Hybrid strategy using bge-m3 embeddings + cosine similarity + Gemini location normalization
+
+**Embedding Input (standardized for all reports):**
+
+```
+Category: fire
+Location: Bondor Bazar, Sylhet
+Summary: Fire reported near a shop with trapped people
+```
+
+All three components are in English regardless of the original report language:
+
+- `category` — from AI classification
+- `normalizedLocation` — Gemini-normalized English location
+- `canonicalSummary` — always-English summary
+
+This ensures cross-language duplicate detection works (a Bangla report and English report about the same incident produce similar embeddings).
 
 **Detection Logic:**
 
-1. Generate embedding vector for the new report's description
-2. Compare against existing report embeddings using cosine similarity
-3. Also consider location and category matching
-4. If similarity exceeds threshold → mark as possible duplicate
+1. AI classifies the report and returns `canonicalSummary` + `normalizedLocation`
+2. Generate embedding from the standardized text above
+3. Retrieve candidate reports (same category, last 24 hours, not rejected)
+4. Calculate cosine similarity between new and candidate embeddings
+5. If similarity > 0.90 → mark as duplicate
 
 **Stored Fields:**
 
@@ -233,37 +264,38 @@ Detects whether a newly submitted report may describe an already existing incide
 
 **User Model:**
 
-| Field     | Type     | Notes                    |
-| --------- | -------- | ------------------------ |
-| id        | UUID     | Primary key              |
-| name      | String   | Required                 |
-| email     | String   | Unique                   |
-| password  | String   | Hashed with bcryptjs     |
-| role      | Role     | `user` or `admin`        |
-| createdAt | DateTime | Auto-generated           |
-| updatedAt | DateTime | Auto-updated             |
+| Field     | Type     | Notes                |
+| --------- | -------- | -------------------- |
+| id        | UUID     | Primary key          |
+| name      | String   | Required             |
+| email     | String   | Unique               |
+| password  | String   | Hashed with bcryptjs |
+| role      | Role     | `user` or `admin`    |
+| createdAt | DateTime | Auto-generated       |
+| updatedAt | DateTime | Auto-updated         |
 
 **Report Model:**
 
-| Field           | Type           | Notes                              |
-| --------------- | -------------- | ---------------------------------- |
-| id              | UUID           | Primary key                        |
-| name            | String?        | Optional reporter name             |
-| contact         | String?        | Optional contact info              |
-| location        | String         | Required                           |
-| description     | String         | Required                           |
-| language        | Language       | Default: `unknown`                 |
-| category        | ReportCategory?| AI-generated                       |
-| urgency         | UrgencyLevel?  | AI-generated                       |
-| summary         | String?        | AI-generated                       |
-| suggestedAction | String?        | AI-generated                       |
-| confidence      | Float?         | AI confidence score (0–1)          |
-| embedding       | Float[]        | bge-m3 vector for duplicate detect |
-| possibleDuplicate | Boolean      | Default: `false`                   |
-| matchedReportId | String?        | UUID of matched report             |
-| status          | ReportStatus   | Default: `pending`                 |
-| createdAt       | DateTime       | Auto-generated                     |
-| updatedAt       | DateTime       | Auto-updated                       |
+| Field             | Type            | Notes                                         |
+| ----------------- | --------------- | --------------------------------------------- |
+| id                | UUID            | Primary key                                   |
+| name              | String?         | Optional reporter name                        |
+| contact           | String?         | Optional contact info                         |
+| location          | String          | Required                                      |
+| description       | String          | Required                                      |
+| language          | Language        | Default: `unknown`                            |
+| category          | ReportCategory? | AI-generated                                  |
+| urgency           | UrgencyLevel?   | AI-generated                                  |
+| summary           | String?         | AI-generated (in report's language)           |
+| canonicalSummary  | String?         | AI-generated (always English, used for embed) |
+| suggestedAction   | String?         | AI-generated                                  |
+| confidence        | Float?          | AI confidence score (0–1)                     |
+| embedding         | Float[]         | bge-m3 vector for duplicate detection         |
+| possibleDuplicate | Boolean         | Default: `false`                              |
+| matchedReportId   | String?         | UUID of matched report                        |
+| status            | ReportStatus    | Default: `pending`                            |
+| createdAt         | DateTime        | Auto-generated                                |
+| updatedAt         | DateTime        | Auto-updated                                  |
 
 ---
 
@@ -284,16 +316,16 @@ Detects whether a newly submitted report may describe an already existing incide
 
 The `GET /api/reports` endpoint supports query parameters:
 
-| Parameter  | Type   | Description                          |
-| ---------- | ------ | ------------------------------------ |
-| category   | string | Filter by category enum value        |
-| urgency    | string | Filter by urgency enum value         |
-| status     | string | Filter by status enum value          |
-| search     | string | Free-text search in description/location |
-| startDate  | string | ISO date — filter reports created after  |
-| endDate    | string | ISO date — filter reports created before |
-| page       | number | Page number (default: 1)             |
-| limit      | number | Items per page (default: 10)         |
+| Parameter | Type   | Description                              |
+| --------- | ------ | ---------------------------------------- |
+| category  | string | Filter by category enum value            |
+| urgency   | string | Filter by urgency enum value             |
+| status    | string | Filter by status enum value              |
+| search    | string | Free-text search in description/location |
+| startDate | string | ISO date — filter reports created after  |
+| endDate   | string | ISO date — filter reports created before |
+| page      | number | Page number (default: 1)                 |
+| limit     | number | Items per page (default: 10)             |
 
 **Example:**
 
@@ -414,6 +446,7 @@ GET /api/reports?category=fire&urgency=critical&page=1&limit=10
 ```
 
 The access token is also set as an `httpOnly` cookie. Subsequent requests can pass the token via:
+
 - Cookie: `accessToken`
 - Header: `Authorization: Bearer <token>`
 
@@ -453,18 +486,14 @@ All error responses follow a consistent structure:
 
 **Error Scenarios:**
 
-| Scenario              | Status Code | Example Message                                                |
-| --------------------- | ----------- | -------------------------------------------------------------- |
-| Validation failure    | 400         | "Description and location are required."                       |
-| Unauthorized          | 401         | "You are not authorized. Please log in."                       |
-| Forbidden             | 403         | "Forbidden. You don't have permission to access this resource." |
-| Email already exists  | 409         | "User already exists with this email"                          |
-| Report not found      | 404         | "Report not found."                                            |
-| Too many requests     | 429         | "Too many requests. Please try again later."                   |
-| Too many login attempts | 429       | "Too many login attempts. Please try again later."             |
-| Too many reports      | 429         | "Too many reports submitted. Please try again later."          |
-| AI processing failure | 500         | "AI classification failed. Please try again."                  |
-| Internal server error | 500         | "Internal Server Error"                                        |
+| Scenario              | Status Code | Example Message                              |
+| --------------------- | ----------- | -------------------------------------------- |
+| Validation failure    | 400         | "Description and location are required."     |
+| Unauthorized          | 401         | "You are not authorized. Please log in."     |
+| Forbidden             | 403         | "You don't have permission to access this."  |
+| Report not found      | 404         | "Report not found."                          |
+| AI processing failure | 500         | "AI classification failed. Please try again."|
+| Internal server error | 500         | "Internal Server Error"                      |
 
 ---
 
@@ -583,13 +612,13 @@ src/
 
 **Unit Tests** — test isolated business logic with mocked dependencies (`vi.mock()`):
 
-| File | What to Mock | What to Test |
-|------|-------------|-------------|
-| `lib/embedding.test.ts` | Nothing (pure math) | `cosineSimilarity` with known vectors (identical → 1, orthogonal → 0) |
-| `lib/gemini.test.ts` | `@google/generative-ai` | Valid JSON parsing, invalid response → throws, confidence clamping (0–1) |
-| `modules/auth/auth.service.test.ts` | `prisma`, `bcryptjs` | Admin-only login, duplicate email rejection, password mismatch, successful register |
+| File                                    | What to Mock                            | What to Test                                                                         |
+| --------------------------------------- | --------------------------------------- | ------------------------------------------------------------------------------------ |
+| `lib/embedding.test.ts`                 | Nothing (pure math)                     | `cosineSimilarity` with known vectors (identical → 1, orthogonal → 0)                |
+| `lib/gemini.test.ts`                    | `@google/generative-ai`                 | Valid JSON parsing, invalid response → throws, confidence clamping (0–1)             |
+| `modules/auth/auth.service.test.ts`     | `prisma`, `bcryptjs`                    | Admin-only login, duplicate email rejection, password mismatch, successful register  |
 | `modules/report/report.service.test.ts` | `prisma`, `lib/gemini`, `lib/embedding` | AI result mapping to DB, duplicate detection above/below threshold, empty candidates |
-| `utils/jwt.test.ts` | Nothing (uses real jsonwebtoken) | Token creation with payload, valid verification, expired token rejection |
+| `utils/jwt.test.ts`                     | Nothing (uses real jsonwebtoken)        | Token creation with payload, valid verification, expired token rejection             |
 
 ### Key Conventions
 
