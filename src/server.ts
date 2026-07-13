@@ -11,6 +11,8 @@ async function main() {
     console.log("Connected to the database successfully.");
     app.listen(PORT, () => {
       console.log(`Server is running on port ${PORT}`);
+      console.log(`📄 API Docs (Swagger UI):  http://localhost:${PORT}/api/docs`);
+      console.log(`🧾 API Docs (JSON spec):   http://localhost:${PORT}/api/docs.json`);
     });
   } catch (error) {
     console.error("Error starting the server:", error);
