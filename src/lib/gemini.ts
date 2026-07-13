@@ -4,7 +4,8 @@ import config from "../config";
 import { ApiError } from "../utils/ApiError";
 
 const genAI = new GoogleGenerativeAI(config.gemini_api_key);
-const model = genAI.getGenerativeModel({ model: "gemini-2.0-flash" });
+const primaryModel = genAI.getGenerativeModel({ model: "gemini-2.0-flash-lite" });
+const fallbackModel = genAI.getGenerativeModel({ model: "gemini-2.5-flash" });
 
 export interface IAIClassification {
   category: string;
@@ -47,31 +48,42 @@ Respond ONLY with a valid JSON object. No markdown, no explanation, no code fenc
 
   let text: string;
   try {
-    const result = await model.generateContent(prompt);
+    const result = await primaryModel.generateContent(prompt);
     text = result.response.text().trim();
-  } catch (error) {
-    // Log full detail server-side, return a safe message client-side.
-    console.error("[gemini] generateContent failed:", error);
+  } catch (primaryError: any) {
+    // If primary model is rate-limited, try fallback model
+    if (primaryError?.status === 429) {
+      console.warn("[gemini] Primary model rate-limited, trying fallback...");
+      try {
+        const result = await fallbackModel.generateContent(prompt);
+        text = result.response.text().trim();
+      } catch (fallbackError) {
+        console.error("[gemini] Fallback also failed:", fallbackError);
+        throw new ApiError(
+          httpStatus.TOO_MANY_REQUESTS,
+          "AI service is rate-limited. Please try again shortly.",
+        );
+      }
+    } else {
+      console.error("[gemini] generateContent failed:", primaryError);
 
-    const status =
-      // The SDK surfaces upstream HTTP status on `error.status`; fall back to 500.
-      typeof (error as { status?: number })?.status === "number"
-        ? (error as { status: number }).status
-        : httpStatus.INTERNAL_SERVER_ERROR;
+      const status =
+        typeof primaryError?.status === "number"
+          ? primaryError.status
+          : httpStatus.INTERNAL_SERVER_ERROR;
 
-    const clientMessage =
-      status === httpStatus.UNAUTHORIZED || status === httpStatus.FORBIDDEN
-        ? "AI service authentication failed. Please contact support."
-        : status === httpStatus.TOO_MANY_REQUESTS
-          ? "AI service is rate-limited. Please try again shortly."
+      const clientMessage =
+        status === httpStatus.UNAUTHORIZED || status === httpStatus.FORBIDDEN
+          ? "AI service authentication failed. Please contact support."
           : "AI classification failed. Please try again.";
 
-    throw new ApiError(
-      status === httpStatus.UNAUTHORIZED || status === httpStatus.FORBIDDEN
-        ? httpStatus.INTERNAL_SERVER_ERROR
-        : status,
-      clientMessage,
-    );
+      throw new ApiError(
+        status === httpStatus.UNAUTHORIZED || status === httpStatus.FORBIDDEN
+          ? httpStatus.INTERNAL_SERVER_ERROR
+          : status,
+        clientMessage,
+      );
+    }
   }
 
   try {

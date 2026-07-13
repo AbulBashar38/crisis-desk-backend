@@ -292,7 +292,23 @@ router.get("/:id", auth("admin"), reportController.getReportById);
  *               status:
  *                 type: string
  *                 enum: [pending, in_review, assigned, resolved, rejected]
- *                 example: assigned
+ *                 description: "Allowed values: pending | in_review | assigned | resolved | rejected"
+ *           examples:
+ *             pending:
+ *               summary: Set to pending
+ *               value: { "status": "pending" }
+ *             in_review:
+ *               summary: Set to in_review
+ *               value: { "status": "in_review" }
+ *             assigned:
+ *               summary: Set to assigned
+ *               value: { "status": "assigned" }
+ *             resolved:
+ *               summary: Set to resolved
+ *               value: { "status": "resolved" }
+ *             rejected:
+ *               summary: Set to rejected
+ *               value: { "status": "rejected" }
  *     responses:
  *       200:
  *         description: OK
