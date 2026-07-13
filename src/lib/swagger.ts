@@ -19,6 +19,14 @@ const options: swaggerJSDoc.Options = {
         url: `http://localhost:${config.port}`,
         description: "Local development",
       },
+      ...(process.env.PUBLIC_URL
+        ? [
+            {
+              url: process.env.PUBLIC_URL,
+              description: "Live (production)",
+            },
+          ]
+        : []),
     ],
     components: {
       // OpenAPI component types are validated at runtime by Swagger UI;
