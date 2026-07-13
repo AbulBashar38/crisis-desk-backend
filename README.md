@@ -123,7 +123,8 @@ Citizens submit emergency reports. No authentication required for submission.
     "language": "bn",
     "category": "fire",
     "urgency": "critical",
-    "summary": "A fire has been reported near a shop with possible trapped people.",
+    "summary": "একটি দোকানের কাছে আগুন লেগেছে এবং মানুষ আটকা পড়েছে।",
+    "canonicalSummary": "Fire reported near a shop with trapped people in Bondor Bazar, Sylhet.",
     "suggestedAction": "Immediately notify fire service and emergency responders.",
     "confidence": 0.91,
     "possibleDuplicate": false,
@@ -143,13 +144,29 @@ After receiving a report, the system calls Gemini AI to analyze the incident and
 
 **AI Output Fields:**
 
-| Field           | Type   | Description                        |
-| --------------- | ------ | ---------------------------------- |
-| category        | enum   | Issue type classification          |
-| urgency         | enum   | Priority level                     |
-| summary         | string | Short AI-generated summary         |
-| suggestedAction | string | Recommended action for responders  |
-| confidence      | float  | Confidence score (0–1)             |
+| Field              | Type   | Description                                                  |
+| ------------------ | ------ | ------------------------------------------------------------ |
+| category           | enum   | Issue type classification                                    |
+| urgency            | enum   | Priority level                                               |
+| summary            | string | Short summary in the report's language (bn/en/auto)          |
+| canonicalSummary   | string | Short summary always in English (used for embedding)         |
+| normalizedLocation | string | Location standardized to clean English format                |
+| suggestedAction    | string | Recommended action for responders (English)                  |
+| confidence         | float  | Confidence score (0–1)                                       |
+
+**Language-aware summary behavior:**
+
+- `language: "bn"` → `summary` in Bangla
+- `language: "en"` → `summary` in English
+- `language: "unknown"` → `summary` in the detected language of the description
+- `canonicalSummary` is always English regardless of input language
+
+**Location normalization:**
+
+Gemini normalizes the raw location into a clean English format for consistent embedding:
+- "সিলেট বন্দর বাজার" → "Bondor Bazar, Sylhet"
+- "sylhet bondor bazar area" → "Bondor Bazar, Sylhet"
+- Proper capitalization, removes informal words, translates if needed
 
 **Allowed Categories:** `medical`, `fire`, `accident`, `crime`, `flood`, `utility`, `public_service`, `infrastructure`, `other`
 
@@ -161,13 +178,15 @@ After receiving a report, the system calls Gemini AI to analyze the incident and
 {
   "category": "fire",
   "urgency": "critical",
-  "summary": "A fire has been reported near a shop with possible trapped people.",
+  "summary": "একটি দোকানের কাছে আগুন লেগেছে এবং মানুষ আটকা পড়েছে।",
+  "canonicalSummary": "Fire reported near a shop with trapped people in Bondor Bazar, Sylhet.",
+  "normalizedLocation": "Bondor Bazar, Sylhet",
   "suggestedAction": "Immediately notify fire service and emergency responders.",
   "confidence": 0.91
 }
 ```
 
-The AI must handle both Bangla and English input descriptions.
+The AI handles both Bangla and English input descriptions.
 
 ---
 
@@ -175,14 +194,30 @@ The AI must handle both Bangla and English input descriptions.
 
 Detects whether a newly submitted report may describe an already existing incident.
 
-**Approach:** Hybrid strategy using bge-m3 embeddings + cosine similarity
+**Approach:** Hybrid strategy using bge-m3 embeddings + cosine similarity + Gemini location normalization
+
+**Embedding Input (standardized for all reports):**
+
+```
+Category: fire
+Location: Bondor Bazar, Sylhet
+Summary: Fire reported near a shop with trapped people
+```
+
+All three components are in English regardless of the original report language:
+- `category` — from AI classification
+- `normalizedLocation` — Gemini-normalized English location
+- `canonicalSummary` — always-English summary
+
+This ensures cross-language duplicate detection works (a Bangla report and English report about the same incident produce similar embeddings).
 
 **Detection Logic:**
 
-1. Generate embedding vector for the new report's description
-2. Compare against existing report embeddings using cosine similarity
-3. Also consider location and category matching
-4. If similarity exceeds threshold → mark as possible duplicate
+1. AI classifies the report and returns `canonicalSummary` + `normalizedLocation`
+2. Generate embedding from the standardized text above
+3. Retrieve candidate reports (same category, last 24 hours, not rejected)
+4. Calculate cosine similarity between new and candidate embeddings
+5. If similarity > 0.90 → mark as duplicate
 
 **Stored Fields:**
 
@@ -217,25 +252,26 @@ Detects whether a newly submitted report may describe an already existing incide
 
 **Report Model:**
 
-| Field           | Type           | Notes                              |
-| --------------- | -------------- | ---------------------------------- |
-| id              | UUID           | Primary key                        |
-| name            | String?        | Optional reporter name             |
-| contact         | String?        | Optional contact info              |
-| location        | String         | Required                           |
-| description     | String         | Required                           |
-| language        | Language       | Default: `unknown`                 |
-| category        | ReportCategory?| AI-generated                       |
-| urgency         | UrgencyLevel?  | AI-generated                       |
-| summary         | String?        | AI-generated                       |
-| suggestedAction | String?        | AI-generated                       |
-| confidence      | Float?         | AI confidence score (0–1)          |
-| embedding       | Float[]        | bge-m3 vector for duplicate detect |
-| possibleDuplicate | Boolean      | Default: `false`                   |
-| matchedReportId | String?        | UUID of matched report             |
-| status          | ReportStatus   | Default: `pending`                 |
-| createdAt       | DateTime       | Auto-generated                     |
-| updatedAt       | DateTime       | Auto-updated                       |
+| Field             | Type           | Notes                                          |
+| ----------------- | -------------- | ---------------------------------------------- |
+| id                | UUID           | Primary key                                    |
+| name              | String?        | Optional reporter name                         |
+| contact           | String?        | Optional contact info                          |
+| location          | String         | Required                                       |
+| description       | String         | Required                                       |
+| language          | Language       | Default: `unknown`                             |
+| category          | ReportCategory?| AI-generated                                   |
+| urgency           | UrgencyLevel?  | AI-generated                                   |
+| summary           | String?        | AI-generated (in report's language)            |
+| canonicalSummary  | String?        | AI-generated (always English, used for embed)  |
+| suggestedAction   | String?        | AI-generated                                   |
+| confidence        | Float?         | AI confidence score (0–1)                      |
+| embedding         | Float[]        | bge-m3 vector for duplicate detection          |
+| possibleDuplicate | Boolean        | Default: `false`                               |
+| matchedReportId   | String?        | UUID of matched report                         |
+| status            | ReportStatus   | Default: `pending`                             |
+| createdAt         | DateTime       | Auto-generated                                 |
+| updatedAt         | DateTime       | Auto-updated                                   |
 
 ---
 
@@ -536,7 +572,7 @@ npm run dev
 
 - [x] Bangla & English language support (via Gemini multilingual capabilities)
 - [x] JWT Authentication for admin APIs
-- [ ] Request rate limiting
+- [x] Request rate limiting
 - [x] Schema validation with Zod
 - [ ] Swagger/OpenAPI documentation
 - [ ] Docker support

@@ -1,21 +1,22 @@
 model Report {
-    id              String         @id @default(uuid())
-    name            String?        @db.VarChar(255)
-    contact         String?        @db.VarChar(255)
-    location        String
-    description     String
-    language        Language       @default(unknown)
-    category        ReportCategory?
-    urgency         UrgencyLevel?
-    summary         String?
-    suggestedAction String?
-    confidence      Float?
-    embedding       Float[]
-    possibleDuplicate Boolean      @default(false)
-    matchedReportId String?
-    status          ReportStatus   @default(pending)
-    createdAt       DateTime       @default(now())
-    updatedAt       DateTime       @updatedAt
+    id                String         @id @default(uuid())
+    name              String?        @db.VarChar(255)
+    contact           String?        @db.VarChar(255)
+    location          String
+    description       String
+    language          Language       @default(unknown)
+    category          ReportCategory?
+    urgency           UrgencyLevel?
+    summary           String?
+    canonicalSummary  String?
+    suggestedAction   String?
+    confidence        Float?
+    embedding         Float[]
+    possibleDuplicate Boolean        @default(false)
+    matchedReportId   String?
+    status            ReportStatus   @default(pending)
+    createdAt         DateTime       @default(now())
+    updatedAt         DateTime       @updatedAt
 
     @@map("reports")
 }

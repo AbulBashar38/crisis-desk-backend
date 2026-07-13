@@ -16,8 +16,8 @@ const createReport = async (payload: ICreateReport) => {
   // Step 2: AI Classification
   const aiResult = await classifyReport(description, location, lang);
 
-  // Step 3: Generate Embedding using standardized text
-  const embeddingInput = `Category: ${aiResult.category}\nLocation: ${location}\nSummary: ${aiResult.summary}`;
+  // Step 3: Generate Embedding using canonicalSummary (always English for consistent similarity)
+  const embeddingInput = `Category: ${aiResult.category}\nLocation: ${aiResult.normalizedLocation}\nSummary: ${aiResult.canonicalSummary}`;
   const embedding = await generateEmbedding(embeddingInput);
 
   // Step 4: Duplicate Detection
@@ -66,6 +66,7 @@ const createReport = async (payload: ICreateReport) => {
       category: aiResult.category as any,
       urgency: aiResult.urgency as any,
       summary: aiResult.summary,
+      canonicalSummary: aiResult.canonicalSummary,
       suggestedAction: aiResult.suggestedAction,
       confidence: aiResult.confidence,
       embedding,
