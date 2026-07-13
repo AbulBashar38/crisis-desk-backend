@@ -1,20 +1,25 @@
 import "dotenv/config";
 import app from "./app";
 import config from "./config";
-import { prisma } from "./lib/prisma";
 
 const PORT = config.port ?? "8080";
 
 async function main() {
   try {
-    await prisma.$connect();
-    console.log("Connected to the database successfully.");
+    // Verify DATABASE_URL is present before starting; Prisma's $connect() is
+    // lazy and resolves successfully even without a valid URL, so we can't
+    // rely on it to surface config errors.
+    if (!process.env.DATABASE_URL) {
+      throw new Error("DATABASE_URL is not set. Add it to your .env file.");
+    }
+
     app.listen(PORT, () => {
       console.log(`Server is running on port ${PORT}`);
+      console.log(`API Docs (Swagger UI):  http://localhost:${PORT}/api/docs`);
+      console.log(`API Docs (JSON spec):   http://localhost:${PORT}/api/docs.json`);
     });
   } catch (error) {
     console.error("Error starting the server:", error);
-    await prisma.$disconnect();
     process.exit(1);
   }
 }

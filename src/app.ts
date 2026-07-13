@@ -20,8 +20,8 @@ app.use(
 );
 
 const globalLimiter = rateLimit({
-  windowMs: 15 * 60 * 1000, // 15 minutes
-  limit: 100, // 100 requests per window per IP
+  windowMs: Number(config.rate_limit_window_ms), // ms from .env (default 15 min)
+  limit: Number(config.rate_limit_max), // max requests per window per IP from .env (default 100)
   standardHeaders: true,
   legacyHeaders: false,
   message: { success: false, statusCode: 429, message: "Too many requests. Please try again later." },
@@ -34,7 +34,24 @@ app.use(cookieParser());
 
 app.use("/api/auth", authRoutes);
 app.use("/api/reports", reportRoutes);
+app.get("/api/docs.json", (_req: Request, res: Response) => {
+  res.setHeader("Content-Type", "application/json");
+  res.send(swaggerSpec);
+});
 app.use("/api/docs", swaggerUi.serve, swaggerUi.setup(swaggerSpec));
+
+app.get("/api/health", (_req: Request, res: Response) => {
+  res.status(200).json({
+    success: true,
+    statusCode: 200,
+    message: "OK",
+    data: {
+      status: "healthy",
+      uptime: process.uptime(),
+      timestamp: new Date().toISOString(),
+    },
+  });
+});
 
 app.get("/", (_req: Request, res: Response) => {
   res.send("Hello, World!");

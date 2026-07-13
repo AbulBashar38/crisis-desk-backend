@@ -23,19 +23,25 @@ The objective is to build an AI-powered backend system capable of transforming t
 
 ## Tech Stack
 
-| Layer          | Technology                                         |
-| -------------- | -------------------------------------------------- |
-| Runtime        | Node.js                                            |
-| Framework      | Express.js 5                                       |
-| Language       | TypeScript                                         |
-| ORM            | Prisma (multi-file schema)                         |
-| Database       | PostgreSQL (Neon DB)                               |
-| AI             | Google Gemini API (classification & summarization) |
-| Embeddings     | bge-m3 model (multilingual duplicate detection)    |
-| Similarity     | Cosine Similarity                                  |
-| Validation     | Zod                                                |
-| Authentication | JWT (access token via cookie or Bearer header)     |
-| Documentation  | Swagger / OpenAPI                                  |
+| Layer            | Technology                                      |
+| ---------------- | ----------------------------------------------- |
+| Runtime          | Node.js 22                                      |
+| Framework        | Express.js 5                                    |
+| Language         | TypeScript                                      |
+| ORM              | Prisma 7 (multi-file schema)                    |
+| Database         | PostgreSQL (Neon DB)                            |
+| Driver           | `@prisma/adapter-pg` + `pg`                     |
+| AI               | Google Gemini API (classification & summarization) |
+| Embeddings       | bge-m3 via `@xenova/transformers`               |
+| Similarity       | Cosine Similarity                               |
+| Validation       | Zod                                             |
+| Auth             | JWT (jsonwebtoken) + bcryptjs; cookie or Bearer |
+| CORS / Cookies   | `cors`, `cookie-parser`                         |
+| Rate Limiting    | `express-rate-limit` (global + per-route)       |
+| Env / DX         | `dotenv`, `tsx`                                 |
+| Docs             | `swagger-jsdoc` + `swagger-ui-express`          |
+| Testing          | Vitest + Supertest                              |
+| Container        | Docker (multi-stage) + docker-compose           |
 
 ---
 
@@ -46,19 +52,25 @@ src/
 ├── app.ts                    # Express app setup, middleware, routes
 ├── server.ts                 # Server bootstrap
 ├── config/
-│   └── index.ts              # Environment variable config
+│   └── index.ts              # Environment variable config (loads .env via dotenv)
 ├── lib/
-│   └── prisma.ts             # Prisma client instance
+│   ├── embedding.ts          # bge-m3 embedder + cosineSimilarity
+│   ├── gemini.ts             # Gemini client + classifyReport()
+│   ├── prisma.ts             # Prisma client instance
+│   └── swagger.ts            # OpenAPI spec (swagger-jsdoc)
 ├── middlewares/
 │   ├── auth.ts               # JWT auth middleware (role-based)
 │   ├── globalErrorHandler.ts # Centralized error handler
-│   └── notFound.ts           # 404 handler
+│   ├── notFound.ts           # 404 handler
+│   ├── rateLimiter.ts        # Global + per-route rate limiters
+│   └── validateRequest.ts    # Zod schema validator wrapper
 ├── modules/
 │   ├── auth/
 │   │   ├── auth.controller.ts
 │   │   ├── auth.interface.ts
 │   │   ├── auth.routes.ts
-│   │   └── auth.service.ts
+│   │   ├── auth.service.ts
+│   │   └── auth.validation.ts
 │   └── report/
 │       ├── report.controller.ts
 │       ├── report.interface.ts
@@ -66,15 +78,31 @@ src/
 │       ├── report.service.ts
 │       └── report.validation.ts
 ├── utils/
+│   ├── ApiError.ts           # Typed API error class
 │   ├── catchAsync.ts         # Async error wrapper
 │   ├── jwt.ts                # JWT sign/verify helpers
 │   └── sendResponse.ts       # Standardized response helper
+├── __tests__/
+│   ├── setup.ts              # Global test setup (env vars, mock resets)
+│   ├── helpers/
+│   │   └── auth.helper.ts    # Test JWT helpers
+│   ├── integration/
+│   │   └── report/
+│   │       └── create-report.test.ts
+│   └── unit/                 # Unit tests (mirrors src/)
+├── prisma.config.ts          # Prisma 7 config (loads dotenv, schema path)
 prisma/
+├── migrations/               # SQL migrations
 └── schema/
     ├── schema.prisma         # Generator & datasource
-    ├── enums.prisma          # All enums (Role, Language, ReportCategory, UrgencyLevel, ReportStatus)
+    ├── enums.prisma          # Role, Language, ReportCategory, UrgencyLevel, ReportStatus
     ├── user.prisma           # User model
     └── report.prisma         # Report model
+generated/                    # Prisma generated client (gitignored)
+Dockerfile                    # Multi-stage build (node:22-bookworm-slim)
+docker-compose.yml            # API service definition
+vitest.config.ts              # Vitest setup
+tsconfig.json                 # TypeScript compiler config
 ```
 
 ---
@@ -357,12 +385,12 @@ GET /api/reports?category=fire&urgency=critical&page=1&limit=10
     "criticalReports": 7,
     "resolvedReports": 10,
     "categoryBreakdown": {
+      "medical": 0,
       "fire": 5,
-      "medical": 8,
-      "flood": 3,
-      "utility": 12,
       "accident": 4,
       "crime": 2,
+      "flood": 3,
+      "utility": 12,
       "public_service": 6,
       "infrastructure": 3,
       "other": 2
@@ -377,11 +405,31 @@ GET /api/reports?category=fire&urgency=critical&page=1&limit=10
 }
 ```
 
+> Keys in `categoryBreakdown` / `urgencyBreakdown` reflect every value of the `ReportCategory` / `UrgencyLevel` enum; counts are `0` for categories with no reports.
+
 ---
 
 ### 9. Authentication
 
-**Endpoint:** `POST /api/auth/login`
+| Method | Endpoint                | Auth Required | Description                          |
+| ------ | ----------------------- | ------------- | ------------------------------------ |
+| POST   | `/api/auth/register`    | No            | Register a new admin/user account    |
+| POST   | `/api/auth/login`       | No            | Admin login (returns JWT + cookie)   |
+
+**Register — `POST /api/auth/register`**
+
+```json
+{
+  "name": "Abul Bashar",
+  "email": "admin@crisisdesk.ai",
+  "password": "supersecret123",
+  "role": "admin"
+}
+```
+
+**Validation:** `name`, `email`, `password` (min 6 chars), `role` (`user` | `admin`) are required.
+
+**Login — `POST /api/auth/login`**
 
 **Request Body:**
 
@@ -444,14 +492,14 @@ All error responses follow a consistent structure:
 
 **Error Scenarios:**
 
-| Scenario              | Status Code | Example Message                               |
-| --------------------- | ----------- | --------------------------------------------- |
-| Validation failure    | 400         | "Description and location are required."      |
-| Unauthorized          | 401         | "You are not authorized. Please log in."      |
-| Forbidden             | 403         | "You don't have permission to access this."   |
-| Report not found      | 404         | "Report not found."                           |
-| AI processing failure | 500         | "AI classification failed. Please try again." |
-| Internal server error | 500         | "Internal Server Error"                       |
+| Scenario              | Status Code | Example Message                              |
+| --------------------- | ----------- | -------------------------------------------- |
+| Validation failure    | 400         | "Description and location are required."     |
+| Unauthorized          | 401         | "You are not authorized. Please log in."     |
+| Forbidden             | 403         | "You don't have permission to access this."  |
+| Report not found      | 404         | "Report not found."                          |
+| AI processing failure | 500         | "AI classification failed. Please try again."|
+| Internal server error | 500         | "Internal Server Error"                      |
 
 ---
 
@@ -465,7 +513,14 @@ BCRYPT_SALT_ROUNDS=12
 JWT_ACCESS_SECRET=your_jwt_secret
 JWT_ACCESS_EXPIRES_IN=1d
 GEMINI_API_KEY=your_gemini_api_key
+RATE_LIMIT_WINDOW_MS=900000
+RATE_LIMIT_MAX=100
 ```
+
+> **How rate limiting is wired:**
+> - `RATE_LIMIT_WINDOW_MS` (default `900000` = 15 min) and `RATE_LIMIT_MAX` (default `100`) configure the **global limiter** applied to every route in `app.ts`.
+> - On top of that, `src/middlewares/rateLimiter.ts` defines stricter per-route limiters: `reportSubmitLimiter` (30 / 15 min) on `POST /api/reports`, and `authLimiter` (10 / 15 min) on `POST /api/auth/login`.
+> - All limits return `429 Too Many Requests` with `RateLimit-*` standard headers.
 
 ---
 
@@ -482,7 +537,8 @@ All successful responses follow this structure:
   "meta": {
     "page": 1,
     "limit": 10,
-    "total": 45
+    "total": 45,
+    "totalPages": 5
   }
 }
 ```
@@ -506,21 +562,22 @@ It documents every public and admin endpoint, request schemas, response codes, a
 ## Docker
 
 ```bash
-docker compose up --build
+docker compose up -d --build   # build and start the API container
+docker compose logs -f api     # tail logs
+docker compose down            # stop and remove
 ```
 
-The `Dockerfile` is a multi-stage build that compiles TypeScript, generates the Prisma client, and copies only the runtime artefacts into a slim image. `docker-compose.yml` reads the same `.env` file for `DATABASE_URL`, `JWT_ACCESS_SECRET`, and `GEMINI_API_KEY`.
+The `Dockerfile` is a multi-stage build that compiles TypeScript, generates the Prisma client, and runs the runtime image under `tini` for proper signal handling. `docker-compose.yml` reads `.env` and forwards `PORT`, `DATABASE_URL`, `APP_URL`, `BCRYPT_SALT_ROUNDS`, `JWT_ACCESS_SECRET`, `JWT_ACCESS_EXPIRES_IN`, and `GEMINI_API_KEY` to the container, then waits for `/api/health` before declaring the service healthy.
 
 ---
 
 ## Scripts
 
 ```bash
-npm run dev           # Start development server (tsx watch)
-npm run build         # Compile TypeScript
-npm start             # Run compiled output
-npm run test          # Run all unit tests once
-npm run test:coverage # Run with coverage report
+npm run dev    # Start development server (tsx watch)
+npm run build  # Compile TypeScript to dist/
+npm start      # Run the server via tsx (no build step required)
+npm test       # Run all tests once (vitest run)
 ```
 
 ---
@@ -536,18 +593,25 @@ Mirrors the `src/` directory for easy navigation:
 ```
 src/
 ├── __tests__/
-│   ├── setup.ts                          # Global test setup (env vars, mock resets)
-│   ├── unit/
-│   │   ├── lib/
-│   │   │   ├── embedding.test.ts         # cosineSimilarity pure logic
-│   │   │   └── gemini.test.ts            # classifyReport (mocked Gemini API)
-│   │   ├── modules/
-│   │   │   ├── auth/
-│   │   │   │   └── auth.service.test.ts  # login & register logic
-│   │   │   └── report/
-│   │   │       └── report.service.test.ts# createReport, duplicate detection
-│   │   └── utils/
-│   │       └── jwt.test.ts               # createToken & verifyToken
+│   ├── setup.ts                                 # Global test setup (env vars, mock resets)
+│   ├── helpers/
+│   │   └── auth.helper.ts                       # Test JWT helpers
+│   ├── integration/
+│   │   └── report/
+│   │       └── create-report.test.ts            # End-to-end POST /api/reports (Supertest)
+│   └── unit/
+│       ├── lib/
+│       │   ├── embedding.test.ts                # cosineSimilarity pure logic
+│       │   └── gemini.test.ts                   # classifyReport (mocked Gemini API)
+│       ├── middlewares/
+│       │   └── auth.test.ts                     # JWT auth middleware
+│       ├── modules/
+│       │   ├── auth/
+│       │   │   └── auth.service.test.ts         # login & register logic
+│       │   └── report/
+│       │       └── report.service.test.ts       # createReport, duplicate detection
+│       └── utils/
+│           └── jwt.test.ts                      # createToken & verifyToken
 ```
 
 ### Testing Strategy
@@ -573,8 +637,7 @@ src/
 ### Running Tests
 
 ```bash
-npm run test          # Run all unit tests once
-npm run test:coverage # Run with coverage report
+npm test   # Run unit + integration tests once (vitest run)
 ```
 
 ---
@@ -596,14 +659,14 @@ npm run dev
 ## Bonus Features
 
 - [x] Bangla & English language support (via Gemini multilingual capabilities)
-- [x] JWT Authentication for admin APIs
-- [x] Request rate limiting (POST /api/reports and POST /api/auth/login)
+- [x] JWT Authentication for admin APIs (cookie + Bearer)
+- [x] Request rate limiting — global limiter on every route, plus per-route limiters on `POST /api/reports` and `POST /api/auth/login`
 - [x] Schema validation with Zod
-- [x] Swagger/OpenAPI documentation at `/api/docs`
-- [x] Docker support (Dockerfile + docker-compose.yml)
-- [ ] Unit & Integration testing
+- [x] Swagger/OpenAPI documentation at `/api/docs` and `/api/docs.json`
+- [x] Docker support (multi-stage `Dockerfile` + `docker-compose.yml` with healthcheck)
+- [x] Unit & Integration testing (Vitest + Supertest)
 - [x] Advanced duplicate detection using bge-m3 embeddings and cosine similarity
-- [x] Clean modular architecture
+- [x] Clean modular architecture (config / lib / middlewares / modules / utils)
 - [x] Live deployment
 
 ---
