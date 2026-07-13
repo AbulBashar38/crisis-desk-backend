@@ -12,6 +12,10 @@ const options: swaggerJSDoc.Options = {
     },
     servers: [
       {
+        url: "https://crisis-desk-backend.onrender.com",
+        description: "Production (Render)",
+      },
+      {
         url: `http://localhost:${config.port}`,
         description: "Local development",
       },

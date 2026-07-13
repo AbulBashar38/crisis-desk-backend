@@ -671,6 +671,13 @@ npm run dev
 
 ---
 
+## Live Deployment
+
+- **Base URL:** https://crisis-desk-backend.onrender.com
+- **API Docs (Swagger):** https://crisis-desk-backend.onrender.com/api/docs
+
+---
+
 ## Deliverables
 
 - Public GitHub repository
