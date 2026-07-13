@@ -543,7 +543,7 @@ npm run dev
 - [x] Unit testing (Vitest)
 - [x] Advanced duplicate detection using bge-m3 embeddings and cosine similarity
 - [x] Clean modular architecture
-- [ ] Live deployment
+- [x] Live deployment
 
 ---
 
