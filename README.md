@@ -1,5 +1,7 @@
 # CrisisDesk AI - Intelligent Backend API for Emergency & Service Request Triage
 
+> **⚠️ Note:** This API is hosted on Render's free tier. The server spins down after inactivity, so the first request may take 30–60 seconds to respond while the instance cold-starts. Subsequent requests will be fast.
+
 ## Overview
 
 CrisisDesk AI is a backend-only REST API that intelligently processes emergency reports and public service complaints. The system accepts citizen reports, classifies them using Google Gemini AI, assigns urgency levels, detects duplicate reports using bge-m3 embeddings with cosine similarity, and provides admin APIs for report management and analytics.
