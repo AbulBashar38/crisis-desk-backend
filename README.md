@@ -455,9 +455,65 @@ The `meta` field is included only for paginated list endpoints.
 ## Scripts
 
 ```bash
-npm run dev       # Start development server (tsx watch)
-npm run build     # Compile TypeScript
-npm start         # Run compiled output
+npm run dev           # Start development server (tsx watch)
+npm run build         # Compile TypeScript
+npm start             # Run compiled output
+npm run test          # Run all unit tests once
+npm run test:coverage # Run with coverage report
+```
+
+---
+
+## Testing
+
+The project uses **Vitest** for unit testing with mocked dependencies.
+
+### Test Folder Structure
+
+Mirrors the `src/` directory for easy navigation:
+
+```
+src/
+├── __tests__/
+│   ├── setup.ts                          # Global test setup (env vars, mock resets)
+│   ├── unit/
+│   │   ├── lib/
+│   │   │   ├── embedding.test.ts         # cosineSimilarity pure logic
+│   │   │   └── gemini.test.ts            # classifyReport (mocked Gemini API)
+│   │   ├── modules/
+│   │   │   ├── auth/
+│   │   │   │   └── auth.service.test.ts  # login & register logic
+│   │   │   └── report/
+│   │   │       └── report.service.test.ts# createReport, duplicate detection
+│   │   └── utils/
+│   │       └── jwt.test.ts               # createToken & verifyToken
+```
+
+### Testing Strategy
+
+**Unit Tests** — test isolated business logic with mocked dependencies (`vi.mock()`):
+
+| File | What to Mock | What to Test |
+|------|-------------|-------------|
+| `lib/embedding.test.ts` | Nothing (pure math) | `cosineSimilarity` with known vectors (identical → 1, orthogonal → 0) |
+| `lib/gemini.test.ts` | `@google/generative-ai` | Valid JSON parsing, invalid response → throws, confidence clamping (0–1) |
+| `modules/auth/auth.service.test.ts` | `prisma`, `bcryptjs` | Admin-only login, duplicate email rejection, password mismatch, successful register |
+| `modules/report/report.service.test.ts` | `prisma`, `lib/gemini`, `lib/embedding` | AI result mapping to DB, duplicate detection above/below threshold, empty candidates |
+| `utils/jwt.test.ts` | Nothing (uses real jsonwebtoken) | Token creation with payload, valid verification, expired token rejection |
+
+### Key Conventions
+
+- **Mocking:** All external services (`Gemini API`, `Prisma`, `@xenova/transformers`) are mocked using `vi.mock()`
+- **No database needed:** Unit tests never hit a real database — Prisma calls are fully mocked
+- **No network calls:** Gemini and embedding model are mocked — tests run offline and fast
+- **Isolation:** Each test file is self-contained with its own mocks — no shared state between files
+- **Naming:** Test files use `.test.ts` suffix and live alongside the structure they test
+
+### Running Tests
+
+```bash
+npm run test          # Run all unit tests once
+npm run test:coverage # Run with coverage report
 ```
 
 ---
@@ -484,7 +540,7 @@ npm run dev
 - [x] Schema validation with Zod
 - [ ] Swagger/OpenAPI documentation
 - [ ] Docker support
-- [ ] Unit & Integration testing
+- [x] Unit testing (Vitest)
 - [x] Advanced duplicate detection using bge-m3 embeddings and cosine similarity
 - [x] Clean modular architecture
 - [ ] Live deployment
