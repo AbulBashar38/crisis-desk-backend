@@ -11,10 +11,14 @@ const options: swaggerJSDoc.Options = {
         "Intelligent backend API for emergency & service request triage.",
     },
     servers: [
-      {
-        url: "https://crisis-desk-backend.onrender.com",
-        description: "Production (Render)",
-      },
+      ...(process.env.PUBLIC_URL
+        ? [
+            {
+              url: process.env.PUBLIC_URL,
+              description: "Live (production)",
+            },
+          ]
+        : []),
       {
         url: `http://localhost:${config.port}`,
         description: "Local development",
