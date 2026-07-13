@@ -23,19 +23,19 @@ The objective is to build an AI-powered backend system capable of transforming t
 
 ## Tech Stack
 
-| Layer            | Technology                                      |
-| ---------------- | ----------------------------------------------- |
-| Runtime          | Node.js                                         |
-| Framework        | Express.js 5                                    |
-| Language         | TypeScript                                      |
-| ORM              | Prisma (multi-file schema)                      |
-| Database         | PostgreSQL (Neon DB)                             |
-| AI               | Google Gemini API (classification & summarization) |
-| Embeddings       | bge-m3 model (multilingual duplicate detection) |
-| Similarity       | Cosine Similarity                               |
-| Validation       | Zod                                             |
-| Authentication   | JWT (access token via cookie or Bearer header)  |
-| Documentation    | Swagger / OpenAPI                               |
+| Layer          | Technology                                         |
+| -------------- | -------------------------------------------------- |
+| Runtime        | Node.js                                            |
+| Framework      | Express.js 5                                       |
+| Language       | TypeScript                                         |
+| ORM            | Prisma (multi-file schema)                         |
+| Database       | PostgreSQL (Neon DB)                               |
+| AI             | Google Gemini API (classification & summarization) |
+| Embeddings     | bge-m3 model (multilingual duplicate detection)    |
+| Similarity     | Cosine Similarity                                  |
+| Validation     | Zod                                                |
+| Authentication | JWT (access token via cookie or Bearer header)     |
+| Documentation  | Swagger / OpenAPI                                  |
 
 ---
 
@@ -144,15 +144,15 @@ After receiving a report, the system calls Gemini AI to analyze the incident and
 
 **AI Output Fields:**
 
-| Field              | Type   | Description                                                  |
-| ------------------ | ------ | ------------------------------------------------------------ |
-| category           | enum   | Issue type classification                                    |
-| urgency            | enum   | Priority level                                               |
-| summary            | string | Short summary in the report's language (bn/en/auto)          |
-| canonicalSummary   | string | Short summary always in English (used for embedding)         |
-| normalizedLocation | string | Location standardized to clean English format                |
-| suggestedAction    | string | Recommended action for responders (English)                  |
-| confidence         | float  | Confidence score (0–1)                                       |
+| Field              | Type   | Description                                          |
+| ------------------ | ------ | ---------------------------------------------------- |
+| category           | enum   | Issue type classification                            |
+| urgency            | enum   | Priority level                                       |
+| summary            | string | Short summary in the report's language (bn/en/auto)  |
+| canonicalSummary   | string | Short summary always in English (used for embedding) |
+| normalizedLocation | string | Location standardized to clean English format        |
+| suggestedAction    | string | Recommended action for responders (English)          |
+| confidence         | float  | Confidence score (0–1)                               |
 
 **Language-aware summary behavior:**
 
@@ -164,6 +164,7 @@ After receiving a report, the system calls Gemini AI to analyze the incident and
 **Location normalization:**
 
 Gemini normalizes the raw location into a clean English format for consistent embedding:
+
 - "সিলেট বন্দর বাজার" → "Bondor Bazar, Sylhet"
 - "sylhet bondor bazar area" → "Bondor Bazar, Sylhet"
 - Proper capitalization, removes informal words, translates if needed
@@ -205,6 +206,7 @@ Summary: Fire reported near a shop with trapped people
 ```
 
 All three components are in English regardless of the original report language:
+
 - `category` — from AI classification
 - `normalizedLocation` — Gemini-normalized English location
 - `canonicalSummary` — always-English summary
@@ -240,38 +242,38 @@ This ensures cross-language duplicate detection works (a Bangla report and Engli
 
 **User Model:**
 
-| Field     | Type     | Notes                    |
-| --------- | -------- | ------------------------ |
-| id        | UUID     | Primary key              |
-| name      | String   | Required                 |
-| email     | String   | Unique                   |
-| password  | String   | Hashed with bcryptjs     |
-| role      | Role     | `user` or `admin`        |
-| createdAt | DateTime | Auto-generated           |
-| updatedAt | DateTime | Auto-updated             |
+| Field     | Type     | Notes                |
+| --------- | -------- | -------------------- |
+| id        | UUID     | Primary key          |
+| name      | String   | Required             |
+| email     | String   | Unique               |
+| password  | String   | Hashed with bcryptjs |
+| role      | Role     | `user` or `admin`    |
+| createdAt | DateTime | Auto-generated       |
+| updatedAt | DateTime | Auto-updated         |
 
 **Report Model:**
 
-| Field             | Type           | Notes                                          |
-| ----------------- | -------------- | ---------------------------------------------- |
-| id                | UUID           | Primary key                                    |
-| name              | String?        | Optional reporter name                         |
-| contact           | String?        | Optional contact info                          |
-| location          | String         | Required                                       |
-| description       | String         | Required                                       |
-| language          | Language       | Default: `unknown`                             |
-| category          | ReportCategory?| AI-generated                                   |
-| urgency           | UrgencyLevel?  | AI-generated                                   |
-| summary           | String?        | AI-generated (in report's language)            |
-| canonicalSummary  | String?        | AI-generated (always English, used for embed)  |
-| suggestedAction   | String?        | AI-generated                                   |
-| confidence        | Float?         | AI confidence score (0–1)                      |
-| embedding         | Float[]        | bge-m3 vector for duplicate detection          |
-| possibleDuplicate | Boolean        | Default: `false`                               |
-| matchedReportId   | String?        | UUID of matched report                         |
-| status            | ReportStatus   | Default: `pending`                             |
-| createdAt         | DateTime       | Auto-generated                                 |
-| updatedAt         | DateTime       | Auto-updated                                   |
+| Field             | Type            | Notes                                         |
+| ----------------- | --------------- | --------------------------------------------- |
+| id                | UUID            | Primary key                                   |
+| name              | String?         | Optional reporter name                        |
+| contact           | String?         | Optional contact info                         |
+| location          | String          | Required                                      |
+| description       | String          | Required                                      |
+| language          | Language        | Default: `unknown`                            |
+| category          | ReportCategory? | AI-generated                                  |
+| urgency           | UrgencyLevel?   | AI-generated                                  |
+| summary           | String?         | AI-generated (in report's language)           |
+| canonicalSummary  | String?         | AI-generated (always English, used for embed) |
+| suggestedAction   | String?         | AI-generated                                  |
+| confidence        | Float?          | AI confidence score (0–1)                     |
+| embedding         | Float[]         | bge-m3 vector for duplicate detection         |
+| possibleDuplicate | Boolean         | Default: `false`                              |
+| matchedReportId   | String?         | UUID of matched report                        |
+| status            | ReportStatus    | Default: `pending`                            |
+| createdAt         | DateTime        | Auto-generated                                |
+| updatedAt         | DateTime        | Auto-updated                                  |
 
 ---
 
@@ -292,16 +294,16 @@ This ensures cross-language duplicate detection works (a Bangla report and Engli
 
 The `GET /api/reports` endpoint supports query parameters:
 
-| Parameter  | Type   | Description                          |
-| ---------- | ------ | ------------------------------------ |
-| category   | string | Filter by category enum value        |
-| urgency    | string | Filter by urgency enum value         |
-| status     | string | Filter by status enum value          |
-| search     | string | Free-text search in description/location |
-| startDate  | string | ISO date — filter reports created after  |
-| endDate    | string | ISO date — filter reports created before |
-| page       | number | Page number (default: 1)             |
-| limit      | number | Items per page (default: 10)         |
+| Parameter | Type   | Description                              |
+| --------- | ------ | ---------------------------------------- |
+| category  | string | Filter by category enum value            |
+| urgency   | string | Filter by urgency enum value             |
+| status    | string | Filter by status enum value              |
+| search    | string | Free-text search in description/location |
+| startDate | string | ISO date — filter reports created after  |
+| endDate   | string | ISO date — filter reports created before |
+| page      | number | Page number (default: 1)                 |
+| limit     | number | Items per page (default: 10)             |
 
 **Example:**
 
@@ -402,6 +404,7 @@ GET /api/reports?category=fire&urgency=critical&page=1&limit=10
 ```
 
 The access token is also set as an `httpOnly` cookie. Subsequent requests can pass the token via:
+
 - Cookie: `accessToken`
 - Header: `Authorization: Bearer <token>`
 
@@ -441,14 +444,14 @@ All error responses follow a consistent structure:
 
 **Error Scenarios:**
 
-| Scenario              | Status Code | Example Message                              |
-| --------------------- | ----------- | -------------------------------------------- |
-| Validation failure    | 400         | "Description and location are required."     |
-| Unauthorized          | 401         | "You are not authorized. Please log in."     |
-| Forbidden             | 403         | "You don't have permission to access this."  |
-| Report not found      | 404         | "Report not found."                          |
-| AI processing failure | 500         | "AI classification failed. Please try again."|
-| Internal server error | 500         | "Internal Server Error"                      |
+| Scenario              | Status Code | Example Message                               |
+| --------------------- | ----------- | --------------------------------------------- |
+| Validation failure    | 400         | "Description and location are required."      |
+| Unauthorized          | 401         | "You are not authorized. Please log in."      |
+| Forbidden             | 403         | "You don't have permission to access this."   |
+| Report not found      | 404         | "Report not found."                           |
+| AI processing failure | 500         | "AI classification failed. Please try again." |
+| Internal server error | 500         | "Internal Server Error"                       |
 
 ---
 
@@ -456,7 +459,7 @@ All error responses follow a consistent structure:
 
 ```env
 DATABASE_URL=postgresql://user:pass@host:5432/crisisdesk
-PORT=5000
+PORT=8080
 APP_URL=http://localhost:3000
 BCRYPT_SALT_ROUNDS=12
 JWT_ACCESS_SECRET=your_jwt_secret
@@ -485,6 +488,28 @@ All successful responses follow this structure:
 ```
 
 The `meta` field is included only for paginated list endpoints.
+
+---
+
+## API Documentation
+
+Interactive Swagger UI is available at:
+
+```
+http://localhost:8080/api/docs
+```
+
+It documents every public and admin endpoint, request schemas, response codes, and the bearer auth scheme used by admin routes.
+
+---
+
+## Docker
+
+```bash
+docker compose up --build
+```
+
+The `Dockerfile` is a multi-stage build that compiles TypeScript, generates the Prisma client, and copies only the runtime artefacts into a slim image. `docker-compose.yml` reads the same `.env` file for `DATABASE_URL`, `JWT_ACCESS_SECRET`, and `GEMINI_API_KEY`.
 
 ---
 
@@ -529,13 +554,13 @@ src/
 
 **Unit Tests** — test isolated business logic with mocked dependencies (`vi.mock()`):
 
-| File | What to Mock | What to Test |
-|------|-------------|-------------|
-| `lib/embedding.test.ts` | Nothing (pure math) | `cosineSimilarity` with known vectors (identical → 1, orthogonal → 0) |
-| `lib/gemini.test.ts` | `@google/generative-ai` | Valid JSON parsing, invalid response → throws, confidence clamping (0–1) |
-| `modules/auth/auth.service.test.ts` | `prisma`, `bcryptjs` | Admin-only login, duplicate email rejection, password mismatch, successful register |
+| File                                    | What to Mock                            | What to Test                                                                         |
+| --------------------------------------- | --------------------------------------- | ------------------------------------------------------------------------------------ |
+| `lib/embedding.test.ts`                 | Nothing (pure math)                     | `cosineSimilarity` with known vectors (identical → 1, orthogonal → 0)                |
+| `lib/gemini.test.ts`                    | `@google/generative-ai`                 | Valid JSON parsing, invalid response → throws, confidence clamping (0–1)             |
+| `modules/auth/auth.service.test.ts`     | `prisma`, `bcryptjs`                    | Admin-only login, duplicate email rejection, password mismatch, successful register  |
 | `modules/report/report.service.test.ts` | `prisma`, `lib/gemini`, `lib/embedding` | AI result mapping to DB, duplicate detection above/below threshold, empty candidates |
-| `utils/jwt.test.ts` | Nothing (uses real jsonwebtoken) | Token creation with payload, valid verification, expired token rejection |
+| `utils/jwt.test.ts`                     | Nothing (uses real jsonwebtoken)        | Token creation with payload, valid verification, expired token rejection             |
 
 ### Key Conventions
 
@@ -572,11 +597,11 @@ npm run dev
 
 - [x] Bangla & English language support (via Gemini multilingual capabilities)
 - [x] JWT Authentication for admin APIs
-- [x] Request rate limiting
+- [x] Request rate limiting (POST /api/reports and POST /api/auth/login)
 - [x] Schema validation with Zod
-- [ ] Swagger/OpenAPI documentation
-- [ ] Docker support
-- [x] Unit testing (Vitest)
+- [x] Swagger/OpenAPI documentation at `/api/docs`
+- [x] Docker support (Dockerfile + docker-compose.yml)
+- [ ] Unit & Integration testing
 - [x] Advanced duplicate detection using bge-m3 embeddings and cosine similarity
 - [x] Clean modular architecture
 - [x] Live deployment

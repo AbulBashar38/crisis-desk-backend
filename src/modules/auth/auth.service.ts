@@ -1,6 +1,8 @@
 import bcrypt from "bcryptjs";
+import httpStatus from "http-status";
 import config from "../../config";
 import { prisma } from "../../lib/prisma";
+import { ApiError } from "../../utils/ApiError";
 import { jwtUtils } from "../../utils/jwt";
 import { ILoginUser, IRegisterUser } from "./auth.interface";
 
@@ -12,7 +14,10 @@ const registerUser = async (payload: IRegisterUser) => {
   });
 
   if (existingUser) {
-    throw new Error("User already exists with this email");
+    throw new ApiError(
+      httpStatus.CONFLICT,
+      "User already exists with this email"
+    );
   }
 
   const hashedPassword = await bcrypt.hash(
@@ -47,17 +52,20 @@ const loginUser = async (payload: ILoginUser) => {
   });
 
   if (!user) {
-    throw new Error("Invalid email or password");
+    throw new ApiError(httpStatus.UNAUTHORIZED, "Invalid email or password");
   }
 
   if (user.role !== "admin") {
-    throw new Error("Access denied. Only admins can log in.");
+    throw new ApiError(
+      httpStatus.UNAUTHORIZED,
+      "Access denied. Only admins can log in."
+    );
   }
 
   const isPasswordMatched = await bcrypt.compare(password, user.password);
 
   if (!isPasswordMatched) {
-    throw new Error("Invalid email or password");
+    throw new ApiError(httpStatus.UNAUTHORIZED, "Invalid email or password");
   }
 
   const jwtPayload = {

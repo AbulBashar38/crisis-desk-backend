@@ -1,0 +1,15 @@
+services:
+  api:
+    build: .
+    container_name: crisis-desk-api
+    ports:
+      - "${PORT:-8080}:${PORT:-8080}"
+    environment:
+      PORT: ${PORT:-8080}
+      DATABASE_URL: ${DATABASE_URL}
+      APP_URL: ${APP_URL:-http://localhost:3000}
+      BCRYPT_SALT_ROUNDS: ${BCRYPT_SALT_ROUNDS:-12}
+      JWT_ACCESS_SECRET: ${JWT_ACCESS_SECRET}
+      JWT_ACCESS_EXPIRES_IN: ${JWT_ACCESS_EXPIRES_IN:-1d}
+      GEMINI_API_KEY: ${GEMINI_API_KEY}
+    restart: unless-stopped

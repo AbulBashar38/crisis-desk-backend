@@ -1,6 +1,8 @@
+import httpStatus from "http-status";
 import { cosineSimilarity, generateEmbedding } from "../../lib/embedding";
 import { classifyReport } from "../../lib/gemini";
 import { prisma } from "../../lib/prisma";
+import { ApiError } from "../../utils/ApiError";
 import {
   ICreateReport,
   IReportFilters,
@@ -137,7 +139,7 @@ const getReportById = async (id: string) => {
   });
 
   if (!report) {
-    throw new Error("Report not found.");
+    throw new ApiError(httpStatus.NOT_FOUND, "Report not found.");
   }
 
   return report;
@@ -150,7 +152,7 @@ const updateReportStatus = async (id: string, payload: IUpdateReportStatus) => {
   });
 
   if (!existingReport) {
-    throw new Error("Report not found.");
+    throw new ApiError(httpStatus.NOT_FOUND, "Report not found.");
   }
 
   const updatedReport = await prisma.report.update({
@@ -169,7 +171,7 @@ const deleteReport = async (id: string) => {
   });
 
   if (!existingReport) {
-    throw new Error("Report not found.");
+    throw new ApiError(httpStatus.NOT_FOUND, "Report not found.");
   }
 
   const deletedReport = await prisma.report.delete({

@@ -1,5 +1,7 @@
 import { GoogleGenerativeAI } from "@google/generative-ai";
+import httpStatus from "http-status";
 import config from "../config";
+import { ApiError } from "../utils/ApiError";
 
 const genAI = new GoogleGenerativeAI(config.gemini_api_key);
 const model = genAI.getGenerativeModel({ model: "gemini-2.0-flash" });
@@ -43,8 +45,18 @@ Report Details:
 
 Respond ONLY with a valid JSON object. No markdown, no explanation, no code fences.`;
 
-  const result = await model.generateContent(prompt);
-  const text = result.response.text().trim();
+  let text: string;
+  try {
+    const result = await model.generateContent(prompt);
+    text = result.response.text().trim();
+  } catch (error) {
+    throw new ApiError(
+      httpStatus.INTERNAL_SERVER_ERROR,
+      error instanceof Error && error.message
+        ? error.message
+        : "AI classification failed. Please try again."
+    );
+  }
 
   try {
     const parsed = JSON.parse(text) as IAIClassification;
@@ -58,6 +70,9 @@ Respond ONLY with a valid JSON object. No markdown, no explanation, no code fenc
       confidence: Math.min(1, Math.max(0, parsed.confidence)),
     };
   } catch {
-    throw new Error("AI classification failed. Please try again.");
+    throw new ApiError(
+      httpStatus.INTERNAL_SERVER_ERROR,
+      "AI classification failed. Please try again."
+    );
   }
 };
