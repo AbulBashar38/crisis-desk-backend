@@ -20,8 +20,8 @@ app.use(
 );
 
 const globalLimiter = rateLimit({
-  windowMs: 15 * 60 * 1000, // 15 minutes
-  limit: 100, // 100 requests per window per IP
+  windowMs: Number(config.rate_limit_window_ms), // ms from .env (default 15 min)
+  limit: Number(config.rate_limit_max), // max requests per window per IP from .env (default 100)
   standardHeaders: true,
   legacyHeaders: false,
   message: { success: false, statusCode: 429, message: "Too many requests. Please try again later." },
