@@ -12,9 +12,18 @@ import rateLimit from "express-rate-limit";
 
 const app: Application = express();
 
+const allowedOrigins = [
+  config.app_url,
+  process.env.PUBLIC_URL,
+].filter((o): o is string => Boolean(o));
+
 app.use(
   cors({
-    origin: config.app_url,
+    origin: (origin, cb) => {
+      // Allow same-origin / curl / server-to-server (no Origin header) and listed origins
+      if (!origin || allowedOrigins.includes(origin)) return cb(null, true);
+      cb(new Error("Not allowed by CORS"));
+    },
     credentials: true,
   }),
 );
