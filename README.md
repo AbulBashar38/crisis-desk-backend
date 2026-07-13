@@ -25,17 +25,23 @@ The objective is to build an AI-powered backend system capable of transforming t
 
 | Layer            | Technology                                      |
 | ---------------- | ----------------------------------------------- |
-| Runtime          | Node.js                                         |
+| Runtime          | Node.js 22                                      |
 | Framework        | Express.js 5                                    |
 | Language         | TypeScript                                      |
-| ORM              | Prisma (multi-file schema)                      |
-| Database         | PostgreSQL (Neon DB)                             |
+| ORM              | Prisma 7 (multi-file schema)                    |
+| Database         | PostgreSQL (Neon DB)                            |
+| Driver           | `@prisma/adapter-pg` + `pg`                     |
 | AI               | Google Gemini API (classification & summarization) |
-| Embeddings       | bge-m3 model (multilingual duplicate detection) |
+| Embeddings       | bge-m3 via `@xenova/transformers`               |
 | Similarity       | Cosine Similarity                               |
 | Validation       | Zod                                             |
-| Authentication   | JWT (access token via cookie or Bearer header)  |
-| Documentation    | Swagger / OpenAPI                               |
+| Auth             | JWT (jsonwebtoken) + bcryptjs; cookie or Bearer |
+| CORS / Cookies   | `cors`, `cookie-parser`                         |
+| Rate Limiting    | `express-rate-limit` (global + per-route)       |
+| Env / DX         | `dotenv`, `tsx`                                 |
+| Docs             | `swagger-jsdoc` + `swagger-ui-express`          |
+| Testing          | Vitest + Supertest                              |
+| Container        | Docker (multi-stage) + docker-compose           |
 
 ---
 
