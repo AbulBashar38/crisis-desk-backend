@@ -38,11 +38,27 @@ Respond ONLY with a valid JSON object. No markdown, no explanation, no code fenc
     const result = await model.generateContent(prompt);
     text = result.response.text().trim();
   } catch (error) {
+    // Log full detail server-side, return a safe message client-side.
+    console.error("[gemini] generateContent failed:", error);
+
+    const status =
+      // The SDK surfaces upstream HTTP status on `error.status`; fall back to 500.
+      typeof (error as { status?: number })?.status === "number"
+        ? (error as { status: number }).status
+        : httpStatus.INTERNAL_SERVER_ERROR;
+
+    const clientMessage =
+      status === httpStatus.UNAUTHORIZED || status === httpStatus.FORBIDDEN
+        ? "AI service authentication failed. Please contact support."
+        : status === httpStatus.TOO_MANY_REQUESTS
+          ? "AI service is rate-limited. Please try again shortly."
+          : "AI classification failed. Please try again.";
+
     throw new ApiError(
-      httpStatus.INTERNAL_SERVER_ERROR,
-      error instanceof Error && error.message
-        ? error.message
-        : "AI classification failed. Please try again."
+      status === httpStatus.UNAUTHORIZED || status === httpStatus.FORBIDDEN
+        ? httpStatus.INTERNAL_SERVER_ERROR
+        : status,
+      clientMessage,
     );
   }
 
@@ -55,10 +71,11 @@ Respond ONLY with a valid JSON object. No markdown, no explanation, no code fenc
       suggestedAction: parsed.suggestedAction,
       confidence: Math.min(1, Math.max(0, parsed.confidence)),
     };
-  } catch {
+  } catch (error) {
+    console.error("[gemini] response parse failed:", error, { text });
     throw new ApiError(
       httpStatus.INTERNAL_SERVER_ERROR,
-      "AI classification failed. Please try again."
+      "AI classification failed. Please try again.",
     );
   }
 };

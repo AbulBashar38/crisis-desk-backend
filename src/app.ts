@@ -40,6 +40,19 @@ app.get("/api/docs.json", (_req: Request, res: Response) => {
 });
 app.use("/api/docs", swaggerUi.serve, swaggerUi.setup(swaggerSpec));
 
+app.get("/api/health", (_req: Request, res: Response) => {
+  res.status(200).json({
+    success: true,
+    statusCode: 200,
+    message: "OK",
+    data: {
+      status: "healthy",
+      uptime: process.uptime(),
+      timestamp: new Date().toISOString(),
+    },
+  });
+});
+
 app.get("/", (_req: Request, res: Response) => {
   res.send("Hello, World!");
 });
