@@ -5,10 +5,10 @@ const options: swaggerJSDoc.Options = {
   definition: {
     openapi: "3.0.0",
     info: {
-      title: "CrisisDesk AI API",
-      version: "1.0.0",
+      title: "CivicDesk AI API",
+      version: "2.0.0",
       description:
-        "Intelligent backend API for emergency & service request triage.",
+        "Backend API for civic infrastructure reporting and triage (potholes, streetlights, water leaks, illegal dumping).",
     },
     servers: [
       ...(process.env.PUBLIC_URL
@@ -25,10 +25,7 @@ const options: swaggerJSDoc.Options = {
       },
     ],
     components: {
-      // OpenAPI component types are validated at runtime by Swagger UI;
-      // cast to `any` so TypeScript doesn't reject unquoted string-literal types.
-      ...({
-        securitySchemes: {
+      securitySchemes: {
         bearerAuth: {
           type: "http",
           scheme: "bearer",
@@ -58,55 +55,104 @@ const options: swaggerJSDoc.Options = {
           type: "object",
           properties: {
             id: { type: "string", format: "uuid" },
-            name: { type: "string", nullable: true },
+            trackingCode: { type: "string", example: "CIV-3K9P7X" },
+            citizenName: { type: "string", nullable: true },
             contact: { type: "string", nullable: true },
-            location: { type: "string" },
             description: { type: "string" },
+            locationText: { type: "string" },
+            latitude: { type: "number", format: "float", nullable: true },
+            longitude: { type: "number", format: "float", nullable: true },
+            normalizedLocation: { type: "string", nullable: true },
             language: {
               type: "string",
-              enum: ["bn", "en", "unknown"],
+              enum: ["en", "bn", "es", "fr", "ar", "unknown"],
               default: "unknown",
             },
             category: {
               type: "string",
-              nullable: true,
               enum: [
-                "fire",
-                "flood",
-                "medical",
-                "accident",
-                "crime",
-                "infrastructure",
+                "pothole",
+                "broken_streetlight",
+                "water_leak",
+                "illegal_dumping",
                 "other",
               ],
-            },
-            urgency: {
-              type: "string",
               nullable: true,
-              enum: ["low", "medium", "high", "critical"],
             },
+            aiCategory: {
+              type: "string",
+              enum: [
+                "pothole",
+                "broken_streetlight",
+                "water_leak",
+                "illegal_dumping",
+                "other",
+              ],
+              nullable: true,
+            },
+            aiConfidence: { type: "number", format: "float", nullable: true },
+            severityLevel: {
+              type: "string",
+              enum: ["low", "medium", "high", "critical"],
+              nullable: true,
+            },
+            severityScore: { type: "number", format: "float", nullable: true },
+            severityRationale: { type: "string", nullable: true },
             summary: { type: "string", nullable: true },
             suggestedAction: { type: "string", nullable: true },
-            confidence: { type: "number", format: "float", minimum: 0, maximum: 1 },
-            possibleDuplicate: { type: "boolean", default: false },
-            matchedReportId: { type: "string", nullable: true },
+            suggestedDepartment: {
+              type: "string",
+              enum: [
+                "roads_and_highways",
+                "electrical",
+                "water_and_sewerage",
+                "waste_management",
+                "general",
+              ],
+              nullable: true,
+            },
+            imageUrls: { type: "array", items: { type: "string", format: "uri" } },
+            duplicateOfId: { type: "string", format: "uuid", nullable: true },
+            duplicateScore: { type: "number", format: "float", nullable: true },
             status: {
               type: "string",
-              enum: ["pending", "in_review", "assigned", "resolved", "rejected"],
+              enum: [
+                "pending",
+                "under_review",
+                "assigned",
+                "in_progress",
+                "resolved",
+                "rejected",
+              ],
               default: "pending",
+            },
+            assignedDepartment: {
+              type: "string",
+              enum: [
+                "roads_and_highways",
+                "electrical",
+                "water_and_sewerage",
+                "waste_management",
+                "general",
+              ],
+              nullable: true,
             },
             createdAt: { type: "string", format: "date-time" },
             updatedAt: { type: "string", format: "date-time" },
           },
         },
-        User: {
+        ProgressUpdate: {
           type: "object",
           properties: {
             id: { type: "string", format: "uuid" },
-            name: { type: "string" },
-            email: { type: "string", format: "email" },
-            role: { type: "string", enum: ["user", "admin"] },
+            status: { type: "string" },
+            note: { type: "string", nullable: true },
+            visibility: {
+              type: "string",
+              enum: ["public", "internal"],
+            },
             createdAt: { type: "string", format: "date-time" },
+            createdById: { type: "string", format: "uuid", nullable: true },
           },
         },
         SingleReportResponse: {
@@ -124,7 +170,20 @@ const options: swaggerJSDoc.Options = {
             success: { type: "boolean", example: true },
             statusCode: { type: "integer", example: 201 },
             message: { type: "string", example: "Report submitted successfully" },
-            data: { $ref: "#/components/schemas/Report" },
+            data: {
+              allOf: [
+                { $ref: "#/components/schemas/Report" },
+                {
+                  type: "object",
+                  properties: {
+                    progressUpdates: {
+                      type: "array",
+                      items: { $ref: "#/components/schemas/ProgressUpdate" },
+                    },
+                  },
+                },
+              ],
+            },
           },
         },
         PaginatedReportsResponse: {
@@ -153,24 +212,47 @@ const options: swaggerJSDoc.Options = {
           properties: {
             success: { type: "boolean", example: true },
             statusCode: { type: "integer", example: 200 },
-            message: {
-              type: "string",
-              example: "Analytics summary retrieved successfully",
-            },
-            data: {
+            message: { type: "string", example: "Analytics summary retrieved successfully" },
+            data: { $ref: "#/components/schemas/StatsSummary" },
+          },
+        },
+        StatsSummary: {
+          type: "object",
+          properties: {
+            total: { type: "integer", example: 120 },
+            byStatus: {
               type: "object",
-              properties: {
-                totalReports: { type: "integer", example: 45 },
-                pendingReports: { type: "integer", example: 18 },
-                criticalReports: { type: "integer", example: 7 },
-                resolvedReports: { type: "integer", example: 10 },
-                categoryBreakdown: {
-                  type: "object",
-                  additionalProperties: { type: "integer" },
-                  example: { fire: 5, flood: 8, medical: 12 },
-                },
-              },
+              additionalProperties: { type: "integer" },
+              example: { pending: 24, resolved: 60, in_progress: 18 },
             },
+            byCategory: {
+              type: "object",
+              additionalProperties: { type: "integer" },
+              example: { pothole: 50, broken_streetlight: 30, water_leak: 20 },
+            },
+            bySeverity: {
+              type: "object",
+              additionalProperties: { type: "integer" },
+              example: { low: 40, medium: 50, high: 25, critical: 5 },
+            },
+            byDepartment: {
+              type: "object",
+              additionalProperties: { type: "integer" },
+              example: { roads_and_highways: 55, electrical: 30 },
+            },
+            open: { type: "integer", example: 60 },
+            duplicateRate: { type: "number", format: "float", example: 0.12 },
+            avgSeverityScore: { type: "number", format: "float", example: 0.46 },
+          },
+        },
+        User: {
+          type: "object",
+          properties: {
+            id: { type: "string", format: "uuid" },
+            name: { type: "string" },
+            email: { type: "string", format: "email" },
+            role: { type: "string", enum: ["user", "admin"] },
+            createdAt: { type: "string", format: "date-time" },
           },
         },
         AuthResponse: {
@@ -200,7 +282,6 @@ const options: swaggerJSDoc.Options = {
           },
         },
       },
-      } as any),
     },
   },
   apis: ["./src/modules/**/*.ts"],

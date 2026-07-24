@@ -1,6 +1,7 @@
 import cookieParser from "cookie-parser";
 import cors from "cors";
 import express, { Application, Request, Response } from "express";
+import rateLimit from "express-rate-limit";
 import swaggerUi from "swagger-ui-express";
 import config from "./config";
 import { swaggerSpec } from "./lib/swagger";
@@ -8,19 +9,17 @@ import { globalErrorHandler } from "./middlewares/globalErrorHandler";
 import { notFound } from "./middlewares/notFound";
 import { authRoutes } from "./modules/auth/auth.routes";
 import { reportRoutes } from "./modules/report/report.routes";
-import rateLimit from "express-rate-limit";
+import { uploadRoutes } from "./modules/upload/upload.routes";
 
 const app: Application = express();
 
-const allowedOrigins = [
-  config.app_url,
-  process.env.PUBLIC_URL,
-].filter((o): o is string => Boolean(o));
+const allowedOrigins = [config.app_url, process.env.PUBLIC_URL].filter(
+  (o): o is string => Boolean(o),
+);
 
 app.use(
   cors({
     origin: (origin, cb) => {
-      // Allow same-origin / curl / server-to-server (no Origin header) and listed origins
       if (!origin || allowedOrigins.includes(origin)) return cb(null, true);
       cb(new Error("Not allowed by CORS"));
     },
@@ -29,20 +28,26 @@ app.use(
 );
 
 const globalLimiter = rateLimit({
-  windowMs: Number(config.rate_limit_window_ms), // ms from .env (default 15 min)
-  limit: Number(config.rate_limit_max), // max requests per window per IP from .env (default 100)
+  windowMs: Number(config.rate_limit_window_ms),
+  limit: Number(config.rate_limit_max),
   standardHeaders: true,
   legacyHeaders: false,
-  message: { success: false, statusCode: 429, message: "Too many requests. Please try again later." },
+  message: {
+    success: false,
+    statusCode: 429,
+    message: "Too many requests. Please try again later.",
+  },
 });
 
 app.use(globalLimiter);
-app.use(express.json());
+app.use(express.json({ limit: "2mb" }));
 app.use(express.urlencoded({ extended: true }));
 app.use(cookieParser());
 
 app.use("/api/auth", authRoutes);
 app.use("/api/reports", reportRoutes);
+app.use("/api/upload", uploadRoutes);
+
 app.get("/api/docs.json", (_req: Request, res: Response) => {
   res.setHeader("Content-Type", "application/json");
   res.send(swaggerSpec);
@@ -63,8 +68,10 @@ app.get("/api/health", (_req: Request, res: Response) => {
 });
 
 app.get("/", (_req: Request, res: Response) => {
-  res.send("Hello, World!");
+  res.send("CivicDesk AI API");
 });
+
 app.use(notFound);
 app.use(globalErrorHandler);
+
 export default app;

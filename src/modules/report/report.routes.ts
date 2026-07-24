@@ -2,10 +2,15 @@ import { Router } from "express";
 import { auth } from "../../middlewares/auth";
 import { reportSubmitLimiter } from "../../middlewares/rateLimiter";
 import { validateRequest } from "../../middlewares/validateRequest";
+import { Role } from "../../../generated/prisma/enums";
 import { reportController } from "./report.controller";
 import {
+  addProgressUpdateValidationSchema,
+  assignDepartmentValidationSchema,
   createReportValidationSchema,
+  listReportsQueryValidationSchema,
   reportIdParamsValidationSchema,
+  trackReportParamsValidationSchema,
   updateReportStatusValidationSchema,
 } from "./report.validation";
 
@@ -13,12 +18,51 @@ const router = Router();
 
 /**
  * @openapi
+ * /api/reports/stats:
+ *   get:
+ *     summary: Aggregated dashboard metrics (admin)
+ *     tags: [Reports]
+ *     security: [{ bearerAuth: [] }]
+ *     responses:
+ *       200: { description: OK }
+ *       401: { description: Unauthorized }
+ */
+router.get("/stats", auth(Role.admin), reportController.getStatsSummary);
+
+/**
+ * @openapi
+ * /api/reports/track/{trackingCode}:
+ *   get:
+ *     summary: Public tracking view
+ *     description: Citizens can look up a report by tracking code. PII is stripped.
+ *     tags: [Reports]
+ *     parameters:
+ *       - in: path
+ *         name: trackingCode
+ *         required: true
+ *         schema: { type: string, example: "CIV-3K9P7X" }
+ *       - in: query
+ *         name: includeInternal
+ *         schema: { type: boolean, default: false }
+ *     responses:
+ *       200: { description: OK }
+ *       404: { description: Not found }
+ */
+router.get(
+  "/track/:trackingCode",
+  validateRequest(trackReportParamsValidationSchema),
+  reportController.trackReport,
+);
+
+/**
+ * @openapi
  * /api/reports:
  *   post:
- *     summary: Submit a new emergency report
+ *     summary: Submit a new civic report
  *     description: |
- *       Accepts a citizen's emergency report, runs Gemini AI classification, generates a
- *       bge-m3 embedding, performs duplicate detection, and persists the report.
+ *       Runs OpenAI triage (category, severity, summary, department), generates
+ *       an embedding, performs weighted duplicate detection against nearby
+ *       recent reports, and returns a tracking code on the persisted record.
  *     tags: [Reports]
  *     requestBody:
  *       required: true
@@ -26,74 +70,29 @@ const router = Router();
  *         application/json:
  *           schema:
  *             type: object
- *             required: [description, location]
+ *             required: [description, locationText]
  *             properties:
- *               name: { type: string, example: "Rahim Uddin" }
- *               contact: { type: string, example: "+8801711000000" }
- *               location: { type: string, example: "Mirpur 10, Dhaka" }
- *               description:
+ *               citizenName: { type: string }
+ *               contact: { type: string }
+ *               description: { type: string, minLength: 3, maxLength: 5000 }
+ *               locationText: { type: string, minLength: 2, maxLength: 500 }
+ *               latitude: { type: number, format: float }
+ *               longitude: { type: number, format: float }
+ *               imageUrls:
+ *                 type: array
+ *                 maxItems: 5
+ *                 items: { type: string, format: uri }
+ *               language:
  *                 type: string
- *                 example: "A fire has broken out near a shop with possible trapped people."
- *               language: { type: string, enum: [bn, en, unknown], example: en }
+ *                 enum: [en, bn, es, fr, ar, unknown]
+ *                 default: unknown
+ *               category:
+ *                 type: string
+ *                 enum: [pothole, broken_streetlight, water_leak, illegal_dumping, other]
  *     responses:
- *       201:
- *         description: Created
- *         content:
- *           application/json:
- *             schema:
- *               $ref: "#/components/schemas/CreateReportResponse"
- *             example:
- *               success: true
- *               statusCode: 201
- *               message: Report submitted successfully
- *               data:
- *                 id: "5f0a2c8e-1b6d-4a2e-9b1c-0e7a2b0d6f01"
- *                 name: "Rahim Uddin"
- *                 contact: "+8801711000000"
- *                 location: "Mirpur 10, Dhaka"
- *                 description: "A fire has broken out near a shop with possible trapped people."
- *                 language: "en"
- *                 category: "fire"
- *                 urgency: "critical"
- *                 summary: "A fire has been reported near a shop with possible trapped people."
- *                 suggestedAction: "Immediately notify fire service and emergency responders."
- *                 confidence: 0.91
- *                 possibleDuplicate: false
- *                 matchedReportId: null
- *                 status: "pending"
- *                 createdAt: "2026-07-13T10:30:00.000Z"
- *                 updatedAt: "2026-07-13T10:30:00.000Z"
- *       400:
- *         description: Validation error
- *         content:
- *           application/json:
- *             schema:
- *               $ref: "#/components/schemas/ErrorResponse"
- *             example:
- *               success: false
- *               statusCode: 400
- *               message: "Description and location are required."
- *               errors:
- *                 - field: "body.description"
- *                   message: "Description is required"
- *       429:
- *         description: Too many requests
- *         content:
- *           application/json:
- *             example:
- *               success: false
- *               statusCode: 429
- *               message: "Too many reports submitted. Please try again later."
- *       500:
- *         description: AI classification failed
- *         content:
- *           application/json:
- *             schema:
- *               $ref: "#/components/schemas/ErrorResponse"
- *             example:
- *               success: false
- *               statusCode: 500
- *               message: "AI classification failed. Please try again."
+ *       201: { description: Created }
+ *       400: { description: Validation error }
+ *       429: { description: Too many submissions }
  */
 router.post(
   "/",
@@ -107,114 +106,52 @@ router.post(
  * /api/reports:
  *   get:
  *     summary: List reports (admin)
- *     description: Returns a paginated list of reports. Supports filtering and free-text search.
  *     tags: [Reports]
  *     security: [{ bearerAuth: [] }]
  *     parameters:
  *       - in: query
  *         name: category
- *         schema: { type: string, enum: [fire, flood, medical, accident, crime, infrastructure, other] }
+ *         schema: { type: string, enum: [pothole, broken_streetlight, water_leak, illegal_dumping, other] }
  *       - in: query
- *         name: urgency
+ *         name: severityLevel
  *         schema: { type: string, enum: [low, medium, high, critical] }
  *       - in: query
  *         name: status
- *         schema: { type: string, enum: [pending, in_review, assigned, resolved, rejected] }
+ *         schema: { type: string, enum: [pending, under_review, assigned, in_progress, resolved, rejected] }
+ *       - in: query
+ *         name: assignedDepartment
+ *         schema: { type: string, enum: [roads_and_highways, electrical, water_and_sewerage, waste_management, general] }
  *       - in: query
  *         name: search
  *         schema: { type: string }
  *       - in: query
  *         name: startDate
- *         schema: { type: string, format: date }
+ *         schema: { type: string, format: date-time }
  *       - in: query
  *         name: endDate
- *         schema: { type: string, format: date }
+ *         schema: { type: string, format: date-time }
  *       - in: query
  *         name: page
- *         schema: { type: integer, default: 1 }
+ *         schema: { type: integer, minimum: 1, default: 1 }
  *       - in: query
  *         name: limit
- *         schema: { type: integer, default: 10 }
+ *         schema: { type: integer, minimum: 1, maximum: 100, default: 10 }
+ *       - in: query
+ *         name: sortBy
+ *         schema: { type: string, enum: [createdAt, severityScore, status], default: createdAt }
+ *       - in: query
+ *         name: sortOrder
+ *         schema: { type: string, enum: [asc, desc], default: desc }
  *     responses:
- *       200:
- *         description: OK
- *         content:
- *           application/json:
- *             schema:
- *               $ref: "#/components/schemas/PaginatedReportsResponse"
- *             example:
- *               success: true
- *               statusCode: 200
- *               message: "Reports retrieved successfully"
- *               meta:
- *                 page: 1
- *                 limit: 10
- *                 total: 45
- *                 totalPages: 5
- *               data:
- *                 - id: "5f0a2c8e-1b6d-4a2e-9b1c-0e7a2b0d6f01"
- *                   location: "Mirpur 10, Dhaka"
- *                   description: "A fire has broken out near a shop with possible trapped people."
- *                   category: "fire"
- *                   urgency: "critical"
- *                   status: "pending"
- *                   possibleDuplicate: false
- *                   matchedReportId: null
- *                   createdAt: "2026-07-13T10:30:00.000Z"
- *                   updatedAt: "2026-07-13T10:30:00.000Z"
- *       401:
- *         description: Unauthorized
- *         content:
- *           application/json:
- *             example:
- *               success: false
- *               statusCode: 401
- *               message: "You are not authorized. Please log in."
+ *       200: { description: OK }
+ *       401: { description: Unauthorized }
  */
-router.get("/", auth("admin"), reportController.getAllReports);
-
-/**
- * @openapi
- * /api/reports/stats/summary:
- *   get:
- *     summary: Analytics summary (admin)
- *     description: Returns aggregated report statistics for the admin dashboard.
- *     tags: [Reports]
- *     security: [{ bearerAuth: [] }]
- *     responses:
- *       200:
- *         description: OK
- *         content:
- *           application/json:
- *             schema:
- *               $ref: "#/components/schemas/StatsSummaryResponse"
- *             example:
- *               success: true
- *               statusCode: 200
- *               message: "Analytics summary retrieved successfully"
- *               data:
- *                 totalReports: 45
- *                 pendingReports: 18
- *                 criticalReports: 7
- *                 resolvedReports: 10
- *                 categoryBreakdown:
- *                   fire: 5
- *                   flood: 8
- *                   medical: 12
- *                   accident: 6
- *                   crime: 4
- *                   infrastructure: 7
- *                   other: 3
- *       401:
- *         description: Unauthorized
- *         content:
- *           application/json:
- *             example:
- *               success: false
- *               statusCode: 401
- *               message: "You are not authorized. Please log in."
- */
-router.get("/stats/summary", auth("admin"), reportController.getStatsSummary);
+router.get(
+  "/",
+  auth(Role.admin),
+  validateRequest(listReportsQueryValidationSchema),
+  reportController.getAllReports,
+);
 
 /**
  * @openapi
@@ -227,47 +164,17 @@ router.get("/stats/summary", auth("admin"), reportController.getStatsSummary);
  *       - in: path
  *         name: id
  *         required: true
- *         schema: { type: string }
+ *         schema: { type: string, format: uuid }
  *     responses:
- *       200:
- *         description: OK
- *         content:
- *           application/json:
- *             schema:
- *               $ref: "#/components/schemas/SingleReportResponse"
- *             example:
- *               success: true
- *               statusCode: 200
- *               message: "Report retrieved successfully"
- *               data:
- *                 id: "5f0a2c8e-1b6d-4a2e-9b1c-0e7a2b0d6f01"
- *                 location: "Mirpur 10, Dhaka"
- *                 description: "A fire has broken out near a shop with possible trapped people."
- *                 category: "fire"
- *                 urgency: "critical"
- *                 status: "pending"
- *                 possibleDuplicate: false
- *                 matchedReportId: null
- *                 createdAt: "2026-07-13T10:30:00.000Z"
- *                 updatedAt: "2026-07-13T10:30:00.000Z"
- *       401:
- *         description: Unauthorized
- *         content:
- *           application/json:
- *             example:
- *               success: false
- *               statusCode: 401
- *               message: "You are not authorized. Please log in."
- *       404:
- *         description: Report not found
- *         content:
- *           application/json:
- *             example:
- *               success: false
- *               statusCode: 404
- *               message: "Report not found."
+ *       200: { description: OK }
+ *       404: { description: Not found }
  */
-router.get("/:id", auth("admin"), reportController.getReportById);
+router.get(
+  "/:id",
+  auth(Role.admin),
+  validateRequest(reportIdParamsValidationSchema),
+  reportController.getReportById,
+);
 
 /**
  * @openapi
@@ -280,7 +187,7 @@ router.get("/:id", auth("admin"), reportController.getReportById);
  *       - in: path
  *         name: id
  *         required: true
- *         schema: { type: string }
+ *         schema: { type: string, format: uuid }
  *     requestBody:
  *       required: true
  *       content:
@@ -291,72 +198,94 @@ router.get("/:id", auth("admin"), reportController.getReportById);
  *             properties:
  *               status:
  *                 type: string
- *                 enum: [pending, in_review, assigned, resolved, rejected]
- *                 description: "Allowed values: pending | in_review | assigned | resolved | rejected"
- *           examples:
- *             pending:
- *               summary: Set to pending
- *               value: { "status": "pending" }
- *             in_review:
- *               summary: Set to in_review
- *               value: { "status": "in_review" }
- *             assigned:
- *               summary: Set to assigned
- *               value: { "status": "assigned" }
- *             resolved:
- *               summary: Set to resolved
- *               value: { "status": "resolved" }
- *             rejected:
- *               summary: Set to rejected
- *               value: { "status": "rejected" }
+ *                 enum: [pending, under_review, assigned, in_progress, resolved, rejected]
+ *               note: { type: string, maxLength: 1000 }
+ *               visibility:
+ *                 type: string
+ *                 enum: [public, internal]
+ *                 default: public
  *     responses:
- *       200:
- *         description: OK
- *         content:
- *           application/json:
- *             schema:
- *               $ref: "#/components/schemas/SingleReportResponse"
- *             example:
- *               success: true
- *               statusCode: 200
- *               message: "Report status updated successfully"
- *               data:
- *                 id: "5f0a2c8e-1b6d-4a2e-9b1c-0e7a2b0d6f01"
- *                 status: "assigned"
- *                 updatedAt: "2026-07-13T11:05:00.000Z"
- *       400:
- *         description: Validation error
- *         content:
- *           application/json:
- *             example:
- *               success: false
- *               statusCode: 400
- *               message: "Validation failed"
- *               errors:
- *                 - field: "body.status"
- *                   message: "Invalid status value"
- *       401:
- *         description: Unauthorized
- *         content:
- *           application/json:
- *             example:
- *               success: false
- *               statusCode: 401
- *               message: "You are not authorized. Please log in."
- *       404:
- *         description: Report not found
- *         content:
- *           application/json:
- *             example:
- *               success: false
- *               statusCode: 404
- *               message: "Report not found."
+ *       200: { description: OK }
  */
 router.patch(
   "/:id/status",
-  auth("admin"),
+  auth(Role.admin),
   validateRequest(updateReportStatusValidationSchema),
   reportController.updateReportStatus,
+);
+
+/**
+ * @openapi
+ * /api/reports/{id}/assign:
+ *   patch:
+ *     summary: Assign a department to a report
+ *     description: Auto-transitions `pending`/`under_review` → `assigned`.
+ *     tags: [Reports]
+ *     security: [{ bearerAuth: [] }]
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema: { type: string, format: uuid }
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required: [assignedDepartment]
+ *             properties:
+ *               assignedDepartment:
+ *                 type: string
+ *                 enum: [roads_and_highways, electrical, water_and_sewerage, waste_management, general]
+ *               note: { type: string, maxLength: 1000 }
+ *     responses:
+ *       200: { description: OK }
+ */
+router.patch(
+  "/:id/assign",
+  auth(Role.admin),
+  validateRequest(assignDepartmentValidationSchema),
+  reportController.assignDepartment,
+);
+
+/**
+ * @openapi
+ * /api/reports/{id}/progress:
+ *   post:
+ *     summary: Add a progress update (admin)
+ *     description: Appends a `ProgressUpdate` row and updates the parent report's status.
+ *     tags: [Reports]
+ *     security: [{ bearerAuth: [] }]
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema: { type: string, format: uuid }
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required: [status]
+ *             properties:
+ *               status:
+ *                 type: string
+ *                 enum: [pending, under_review, assigned, in_progress, resolved, rejected]
+ *               note: { type: string, maxLength: 1000 }
+ *               visibility:
+ *                 type: string
+ *                 enum: [public, internal]
+ *                 default: public
+ *     responses:
+ *       201: { description: Created }
+ */
+router.post(
+  "/:id/progress",
+  auth(Role.admin),
+  validateRequest(addProgressUpdateValidationSchema),
+  reportController.addProgressUpdate,
 );
 
 /**
@@ -370,38 +299,14 @@ router.patch(
  *       - in: path
  *         name: id
  *         required: true
- *         schema: { type: string }
+ *         schema: { type: string, format: uuid }
  *     responses:
- *       200:
- *         description: OK
- *         content:
- *           application/json:
- *             example:
- *               success: true
- *               statusCode: 200
- *               message: "Report deleted successfully"
- *               data:
- *                 id: "5f0a2c8e-1b6d-4a2e-9b1c-0e7a2b0d6f01"
- *       401:
- *         description: Unauthorized
- *         content:
- *           application/json:
- *             example:
- *               success: false
- *               statusCode: 401
- *               message: "You are not authorized. Please log in."
- *       404:
- *         description: Report not found
- *         content:
- *           application/json:
- *             example:
- *               success: false
- *               statusCode: 404
- *               message: "Report not found."
+ *       200: { description: OK }
+ *       404: { description: Not found }
  */
 router.delete(
   "/:id",
-  auth("admin"),
+  auth(Role.admin),
   validateRequest(reportIdParamsValidationSchema),
   reportController.deleteReport,
 );

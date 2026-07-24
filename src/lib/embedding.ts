@@ -1,26 +1,50 @@
-import { pipeline, FeatureExtractionPipeline } from "@xenova/transformers";
+/**
+ * Embedding utilities backed by OpenAI's `text-embedding-3-small`.
+ *
+ * Embeddings are computed from the canonical English summary that the
+ * OpenAI triage call produces (see `lib/openai.ts`). This keeps the
+ * semantic search consistent across languages (Bangla or English input
+ * both map to the same vector space).
+ */
 
-let extractor: FeatureExtractionPipeline | null = null;
+import OpenAI from "openai";
+import config from "../config";
 
-const getExtractor = async (): Promise<FeatureExtractionPipeline> => {
-  if (!extractor) {
-    extractor = await pipeline("feature-extraction", "Xenova/bge-m3");
+let cachedClient: OpenAI | null = null;
+
+function getClient(): OpenAI {
+  if (!cachedClient) {
+    cachedClient = new OpenAI({ apiKey: config.openai_api_key });
   }
-  return extractor;
-};
+  return cachedClient;
+}
 
+/**
+ * Generate a normalized embedding vector for the given text.
+ * `text-embedding-3-small` returns 1536 dimensions.
+ */
 export const generateEmbedding = async (text: string): Promise<number[]> => {
-  const model = await getExtractor();
-  const output = await model(text, { pooling: "cls", normalize: true });
-  return Array.from(output.data as Float32Array);
+  if (!text || !text.trim()) return [];
+
+  const trimmed = text.slice(0, 8000); // safety clamp
+  const client = getClient();
+
+  const res = await client.embeddings.create({
+    model: config.openai_embedding_model,
+    input: trimmed,
+  });
+
+  return res.data[0]?.embedding ?? [];
 };
 
 export const cosineSimilarity = (a: number[], b: number[]): number => {
+  if (!a.length || !b.length) return 0;
+  const len = Math.min(a.length, b.length);
   let dotProduct = 0;
   let normA = 0;
   let normB = 0;
 
-  for (let i = 0; i < a.length; i++) {
+  for (let i = 0; i < len; i++) {
     const ai = a[i]!;
     const bi = b[i]!;
     dotProduct += ai * bi;
