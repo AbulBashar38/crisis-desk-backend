@@ -1,19 +1,24 @@
-# CrisisDesk AI - Intelligent Backend API for Emergency & Service Request Triage
+# CivicDesk AI — Civic Infrastructure Reporting Platform (Backend)
+
+> **Competition:** AI & API Hackathon 2026 — First Edition
+> **Organizer:** IEEE Computer Society — SEU Student Branch Chapter
+> **Project type:** Full-stack AI-powered civic infrastructure reporting platform — **this repo contains the backend API**.
 
 > **⚠️ Note:** This API is hosted on Render's free tier. The server spins down after inactivity, so the first request may take 30–60 seconds to respond while the instance cold-starts. Subsequent requests will be fast.
 
+---
+
 ## Overview
 
-CrisisDesk AI is a backend-only REST API that intelligently processes emergency reports and public service complaints. The system accepts citizen reports, classifies them using Google Gemini AI, assigns urgency levels, detects duplicate reports using bge-m3 embeddings with cosine similarity, and provides admin APIs for report management and analytics.
+**CivicDesk AI** is an AI-powered civic infrastructure platform that lets **citizens** report public-infrastructure problems (potholes, broken streetlights, water leaks, illegal dumping) and lets **government officials** review, prioritize, assign, and resolve them through a structured dashboard.
 
-**Key highlights:**
+Every submission is processed through **OpenAI ChatGPT** for:
+- **Category validation** against a fixed enum (`pothole`, `broken_streetlight`, `water_leak`, `illegal_dumping`, `other`)
+- **Structured summarization** with confidence score
+- **Severity assessment** (level + numeric score + plain-language rationale)
+- **Embedding-based duplicate detection** (`text-embedding-3-small`) combined with geographic and temporal proximity
 
-- AI-powered classification & summarization (Bangla + English)
-- Multilingual duplicate detection using local embeddings + cosine similarity
-- Location normalization via Gemini for consistent cross-language matching
-- JWT authentication for admin endpoints
-- Rate limiting, Zod validation, Swagger docs
-- 51 unit tests with Vitest
+Reports can be tracked by citizens using a public **tracking code** (`CIV-XXXXXX`) with no login required and no PII exposed. Photo evidence is stored on **Cloudinary**.
 
 ---
 
@@ -27,16 +32,43 @@ CrisisDesk AI is a backend-only REST API that intelligently processes emergency 
 
 ---
 
-## Architecture Diagram
+## Architecture
 
-![CrisisDesk AI Architecture](./images/archi.png)
+```
+Citizen submits report (with Cloudinary image URLs)
+                │
+                ▼
+   ┌────────────────────────┐
+   │ Zod validation         │
+   └────────────────────────┘
+                │
+                ▼
+   ┌────────────────────────┐
+   │ ChatGPT categorization │  → category, summary, confidence
+   └────────────────────────┘
+                │
+                ▼
+   ┌────────────────────────┐
+   │ ChatGPT severity       │  → level, score, rationale
+   └────────────────────────┘
+                │
+                ▼
+   ┌────────────────────────┐
+   │ Embedding generation   │  → text-embedding-3-small
+   └────────────────────────┘
+                │
+                ▼
+   ┌────────────────────────┐
+   │ Duplicate detection    │  → semantic + category + geo + time
+   └────────────────────────┘
+                │
+                ▼
+   ┌────────────────────────┐
+   │ Persist + tracking code│  → CIV-XXXXXX, initial progress note
+   └────────────────────────┘
+```
 
 ---
-
-## Video Explanation
-
-- **Part 1 —API Walkthrough & Demo:** https://www.loom.com/share/87648680af7846adbe20488bf1266e25
-- **Part 2 —  Architecture & Design:** https://www.loom.com/share/cb232dad486c401e8468fc88b6ba528d
 
 ## Tech Stack
 
@@ -47,29 +79,76 @@ CrisisDesk AI is a backend-only REST API that intelligently processes emergency 
 | Language       | TypeScript                                         |
 | ORM            | Prisma (multi-file schema)                         |
 | Database       | PostgreSQL (Neon DB)                               |
-| AI             | Google Gemini API (classification & summarization) |
-| Embeddings     | bge-m3 via `@xenova/transformers` (local, free)    |
-| Similarity     | Cosine Similarity                                  |
-| Validation     | Zod                                                |
+| AI             | **OpenAI ChatGPT** (`gpt-4o-mini` + `gpt-4o` fallback) |
+| Embeddings     | `text-embedding-3-small` (OpenAI)                  |
+| Image storage  | **Cloudinary**                                     |
 | Auth           | JWT + bcryptjs (cookie or Bearer header)           |
+| Validation     | Zod                                                |
 | Rate Limiting  | `express-rate-limit`                               |
 | Docs           | `swagger-jsdoc` + `swagger-ui-express`             |
 | Testing        | Vitest + Supertest                                 |
+| Frontend       | Next.js 15 + Tailwind + shadcn/ui (separate app)   |
+| Maps           | Leaflet + OpenStreetMap (bonus)                    |
+
+---
+
+## Core Features (per hackathon modules)
+
+| Module | Status | Notes |
+|---|---|---|
+| **1.** Citizen report submission (description, location, optional contact, optional photo) | ✅ | Returns unique tracking code |
+| **2.** AI categorization + structured summary + confidence | ✅ | ChatGPT structured outputs |
+| **3.** Severity scoring (level + score + rationale) | ✅ | Explainability surfaced to dashboard + tracking page |
+| **4.** Duplicate detection (semantic + category + geo + time) | ✅ | Weighted score, never blocks submissions |
+| **5.** Government dashboard (filters, search, assign, status, progress notes) | ✅ | Department-based assignment |
+| **6.** Public progress tracking via tracking code (no PII) | ✅ | Returns public progress history only |
+| **7.** Persistent DB + Cloudinary image storage | ✅ | PostgreSQL + Cloudinary URLs |
+
+---
+
+## Domain Model
+
+### Categories
+`pothole`, `broken_streetlight`, `water_leak`, `illegal_dumping`, `other`
+
+### Severity Levels
+`low`, `medium`, `high`, `critical` — paired with a numeric `severityScore` (0–1) and a `severityRationale` for explainability.
+
+### Departments
+`roads_and_highways`, `electrical`, `water_and_sewerage`, `waste_management`, `general`
+
+### Status Lifecycle
+`pending → under_review → assigned → in_progress → resolved | rejected`
+
+### Progress Updates
+Every status change creates a `ProgressUpdate` row. `visibility = public` shows the note on the tracking page; `visibility = internal` is admin-only.
 
 ---
 
 ## API Endpoints
 
-| Method | Endpoint                     | Auth     | Description                |
-| ------ | ---------------------------- | -------- | -------------------------- |
-| POST   | `/api/auth/register`         | No       | Register admin/user        |
-| POST   | `/api/auth/login`            | No       | Admin login → JWT token    |
-| POST   | `/api/reports`               | No       | Submit a new report        |
-| GET    | `/api/reports`               | Admin    | List reports (filters + pagination) |
-| GET    | `/api/reports/:id`           | Admin    | Get single report          |
-| PATCH  | `/api/reports/:id/status`    | Admin    | Update report status       |
-| DELETE | `/api/reports/:id`           | Admin    | Delete a report            |
-| GET    | `/api/reports/stats/summary` | Admin    | Analytics summary          |
+### Public
+
+| Method | Endpoint | Purpose |
+|---|---|---|
+| POST | `/api/reports` | Submit a new report (multipart JSON with `imageUrls[]`) |
+| GET  | `/api/reports/track/:trackingCode` | Public tracking view (no PII) |
+| POST | `/api/uploads/sign` | Optional Cloudinary signed-upload payload |
+| GET  | `/api/health` | Health check |
+
+### Admin (JWT, role = `admin`)
+
+| Method | Endpoint | Purpose |
+|---|---|---|
+| POST   | `/api/auth/register` | Bootstrap admin (gated by env flag in prod) |
+| POST   | `/api/auth/login` | Admin login → JWT token |
+| GET    | `/api/reports` | List + filter + search + paginate |
+| GET    | `/api/reports/:id` | Full report detail |
+| PATCH  | `/api/reports/:id/assign` | Assign department + status |
+| POST   | `/api/reports/:id/progress` | Add progress update (status + note + visibility) |
+| GET    | `/api/reports/:id/duplicates` | List all reports linked as duplicates |
+| GET    | `/api/reports/stats/summary` | Dashboard analytics |
+| DELETE | `/api/reports/:id` | Soft-delete (sets `status = rejected`) |
 
 ---
 
@@ -77,12 +156,14 @@ CrisisDesk AI is a backend-only REST API that intelligently processes emergency 
 
 When `POST /api/reports` is called:
 
-1. **Validate** — Zod checks required fields (description, location)
-2. **AI Classify** — Gemini returns category, urgency, summary (in report language), canonicalSummary (English), normalizedLocation (English), suggestedAction, confidence
-3. **Generate Embedding** — bge-m3 creates vector from: `Category + normalizedLocation + canonicalSummary`
-4. **Duplicate Detection** — Fetch candidates (same category, last 24h, not rejected), compare via cosine similarity (threshold > 0.90)
-5. **Save** — Store everything in PostgreSQL
-6. **Respond** — Return full report with AI fields + duplicate result
+1. **Validate** — Zod checks description, location, optional coordinates, optional `imageUrls[]`, category.
+2. **Categorize (ChatGPT)** — returns `validatedCategory`, `summary` (citizen language), `canonicalSummary` (English), `normalizedLocation`, `confidence`.
+3. **Severity (ChatGPT)** — returns `level`, `score`, `rationale` based on safety risk, scale, danger, sensitive-area proximity.
+4. **Generate Embedding** — `text-embedding-3-small` over `Category + normalizedLocation + canonicalSummary`.
+5. **Duplicate Detection** — weighted score over `semantic + category + geo (≤500m) + time (≤7d)`; if combined ≥ 0.80 → `duplicateOfId` linked.
+6. **Tracking Code** — generate `CIV-XXXXXX` and store.
+7. **Save** — persist report + initial `ProgressUpdate` (status = `pending`, note = "Report received", visibility = `public`).
+8. **Respond** — return full report with `trackingCode` + AI fields.
 
 ---
 
@@ -91,15 +172,47 @@ When `POST /api/reports` is called:
 ```
 Embedding Input (always English, regardless of report language):
 ─────────────────────────────────────────────────────────────────
-Category: fire
-Location: Bondor Bazar, Sylhet          ← Gemini-normalized
-Summary: Fire near a shop with trapped  ← canonicalSummary
+Category: pothole
+Location: Mirpur 10, Dhaka              ← ChatGPT-normalized
+Summary: Large pothole near school      ← canonicalSummary
 ─────────────────────────────────────────────────────────────────
+
+Weighted duplicate score:
+  semantic     0.55   cosine similarity
+  category     0.15   exact enum equality
+  geo          0.20   Haversine distance ≤ 500 m
+  time         0.10   within last 7 days
+
+Threshold: 0.80 → duplicateOfId linked, possibleDuplicate = true
+(Submission is never blocked.)
 ```
 
-- Cross-language: Bangla and English reports about the same event produce similar embeddings
-- Candidate filtering: Same category + last 24 hours + not rejected (avoids scanning entire DB)
-- Threshold: 0.90 cosine similarity → `possibleDuplicate: true`
+---
+
+## Public Tracking Response Shape
+
+`GET /api/reports/track/:trackingCode` returns (PII redacted):
+
+```json
+{
+  "trackingCode": "CIV-7K2P9X",
+  "description": "Large pothole near the school crossing...",
+  "category": "pothole",
+  "aiCategory": "pothole",
+  "severityLevel": "high",
+  "severityScore": 0.82,
+  "severityRationale": "Pothole near a school crossing poses direct risk to children.",
+  "status": "assigned",
+  "assignedDepartment": "roads_and_highways",
+  "imageUrls": ["https://res.cloudinary.com/.../civic-reports/CIV-7K2P9X/abc.jpg"],
+  "createdAt": "2026-07-24T10:00:00.000Z",
+  "progressHistory": [
+    { "status": "pending",      "note": "Report received.",           "createdAt": "..." },
+    { "status": "under_review", "note": "Verified by field officer.", "createdAt": "..." },
+    { "status": "assigned",     "note": "Forwarded to Roads Dept.",   "createdAt": "..." }
+  ]
+}
+```
 
 ---
 
@@ -111,23 +224,28 @@ src/
 ├── server.ts                 # Server bootstrap
 ├── config/index.ts           # Environment config
 ├── lib/
-│   ├── embedding.ts          # bge-m3 embedder + cosineSimilarity
-│   ├── gemini.ts             # Gemini AI client (primary + fallback model)
+│   ├── openai.ts             # ChatGPT client (categorize + severity)
+│   ├── embedding.ts          # text-embedding-3-small + cosineSimilarity
+│   ├── severity.ts           # Severity assessment pipeline
+│   ├── cloudinary.ts         # Signed upload helper
 │   ├── prisma.ts             # Prisma client
 │   └── swagger.ts            # OpenAPI spec
 ├── middlewares/
 │   ├── auth.ts               # JWT role-based auth
 │   ├── globalErrorHandler.ts # Centralized error handler
 │   ├── validateRequest.ts    # Zod validation wrapper
+│   ├── rateLimiter.ts        # Per-route rate limits
 │   └── notFound.ts           # 404 handler
 ├── modules/
 │   ├── auth/                 # register, login
-│   └── report/               # CRUD + AI + analytics
+│   ├── report/               # CRUD + AI + analytics + tracking + duplicates
+│   └── upload/               # Cloudinary signed uploads
 ├── utils/
 │   ├── catchAsync.ts
 │   ├── jwt.ts
-│   └── sendResponse.ts
-└── __tests__/                # Unit + integration tests (51 tests)
+│   ├── sendResponse.ts
+│   └── trackingCode.ts       # CIV-XXXXXX generator
+└── __tests__/                # Unit + integration tests (Vitest)
 ```
 
 ---
@@ -147,13 +265,32 @@ npm run dev
 ## Environment Variables
 
 ```env
+# Core
 DATABASE_URL=postgresql://user:pass@host:5432/crisisdesk
 PORT=8080
 APP_URL=http://localhost:3000
+PUBLIC_URL=https://your-frontend.example
+
+# Auth
 BCRYPT_SALT_ROUNDS=12
 JWT_ACCESS_SECRET=your_jwt_secret
 JWT_ACCESS_EXPIRES_IN=1d
-GEMINI_API_KEY=your_gemini_api_key
+
+# Rate limiting
+RATE_LIMIT_WINDOW_MS=900000
+RATE_LIMIT_MAX=100
+
+# OpenAI (ChatGPT)
+OPENAI_API_KEY=sk-...
+OPENAI_MODEL_PRIMARY=gpt-4o-mini
+OPENAI_MODEL_FALLBACK=gpt-4o
+OPENAI_EMBEDDING_MODEL=text-embedding-3-small
+
+# Cloudinary
+CLOUDINARY_CLOUD_NAME=xxxxx
+CLOUDINARY_API_KEY=xxxxx
+CLOUDINARY_API_SECRET=xxxxx
+CLOUDINARY_UPLOAD_PRESET=civic_reports
 ```
 
 ---
@@ -163,44 +300,39 @@ GEMINI_API_KEY=your_gemini_api_key
 ```bash
 npm run dev    # Development server (tsx watch)
 npm start      # Production server (tsx)
-npm test       # Run all 51 tests (vitest)
+npm test       # Run all tests (vitest)
 ```
 
 ---
 
 ## Testing
 
-51 tests across 7 test files using Vitest:
+Vitest + Supertest across unit and integration suites:
 
-| Test File | Tests | Coverage |
-|-----------|-------|----------|
-| `embedding.test.ts` | 9 | cosineSimilarity math (identical, orthogonal, commutative) |
-| `gemini.test.ts` | 7 | AI response parsing, confidence clamping, error handling |
-| `auth.service.test.ts` | 6 | Register, login, admin-only, password mismatch |
-| `report.service.test.ts` | 15 | CRUD, duplicate detection, analytics |
-| `auth.test.ts` (middleware) | 7 | Token extraction, role check, missing token |
-| `jwt.test.ts` | 5 | Create, verify, expired, wrong secret |
-| `create-report.test.ts` | 2 | Validation errors (integration) |
+| Test File | Coverage |
+|-----------|----------|
+| `embedding.test.ts` | cosineSimilarity math |
+| `openai.test.ts` | ChatGPT response parsing, confidence clamping, error handling |
+| `auth.service.test.ts` | Register, login, role enforcement |
+| `report.service.test.ts` | CRUD, tracking code, duplicate detection, severity |
+| `auth.test.ts` (middleware) | Token extraction, role check |
+| `jwt.test.ts` | Create, verify, expired, wrong secret |
+| `create-report.test.ts` | Validation errors (integration) |
 
 ```bash
-npm test   # All pass in <1 second
+npm test
 ```
 
 ---
 
-## Bonus Features
+## Acknowledgements
 
-- [x] Bangla & English language support
-- [x] JWT Authentication for admin APIs
-- [x] Request rate limiting (100 req/15min global)
-- [x] Schema validation with Zod
-- [x] Swagger/OpenAPI documentation
-- [x] Unit & Integration testing (51 tests)
-- [x] Advanced duplicate detection (bge-m3 embeddings + cosine similarity)
-- [x] AI-powered location normalization for cross-language matching
-- [x] Gemini model fallback (primary → fallback on rate limit)
-- [x] Clean modular architecture
-- [x] Live deployment on Render
+- **OpenAI** — ChatGPT API (`gpt-4o-mini`, `gpt-4o`) and `text-embedding-3-small`.
+- **Cloudinary** — image upload, transformation, and delivery.
+- **OpenStreetMap** contributors — map tiles (used by the companion frontend).
+- **Leaflet** — open-source mapping library (used by the companion frontend).
+- **Prisma** + **Neon** — ORM and managed Postgres.
+- AI-assisted development tools were used during the build; core architecture and business logic are the team's own work.
 
 ---
 
@@ -208,8 +340,11 @@ npm test   # All pass in <1 second
 
 - [x] Public GitHub repository
 - [x] Live deployed backend
-- [x] API documentation (Swagger)
-- [x] Architecture diagram
-- [x] Architecture explanation video
+- [x] Swagger / OpenAPI documentation
+- [x] Modular, well-typed backend with persistent DB
+- [x] Public progress tracking (no PII)
+- [x] Cloudinary image upload integration
+- [x] ChatGPT-powered categorization + severity + duplicate detection
+- [x] Vitest unit + integration tests
 
 
